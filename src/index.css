@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.animate-toast { animation: toast-in 0.18s ease-out both; }
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: #F8F9FC;
+    color: #1E1B4B;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  *::-webkit-scrollbar { width: 5px; height: 5px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #C4B5FD; border-radius: 99px; }
+  *::-webkit-scrollbar-thumb:hover { background: #a78bfa; }
+}

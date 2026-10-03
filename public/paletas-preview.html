@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Previsualización final — CREAR</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #E9E4F5; padding: 40px 24px; }
+  h1 { text-align: center; font-size: 18px; color: #2E1065; margin-bottom: 6px; font-weight: 800; letter-spacing: -.3px; }
+  .subtitle { text-align: center; font-size: 12px; color: #7C6FAD; margin-bottom: 36px; }
+
+  .row { display: flex; gap: 40px; justify-content: center; flex-wrap: wrap; align-items: flex-start; }
+
+  /* ── Mockup shell ── */
+  .mockup-wrap { max-width: 560px; width: 100%; }
+  .mockup-label { text-align: center; font-size: 11px; font-weight: 700; color: #6B5F9E; margin-bottom: 10px; letter-spacing: .8px; text-transform: uppercase; }
+  .mockup { border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(46,16,101,.25); }
+  .shell { display: flex; height: 380px; }
+
+  /* ── Sidebar púrpura profundo ── */
+  .sidebar {
+    width: 152px;
+    flex-shrink: 0;
+    background: linear-gradient(160deg, #2E1065 0%, #3B0764 100%);
+    padding: 18px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .logo-row { display: flex; align-items: center; gap: 9px; margin-bottom: 20px; }
+  .logo-icon { width: 30px; height: 30px; border-radius: 9px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 13px; color: #fff; }
+  .logo-text { font-size: 14px; font-weight: 900; color: #fff; letter-spacing: 2px; }
+  .logo-sub { font-size: 9px; color: rgba(255,255,255,.4); letter-spacing: .8px; text-transform: uppercase; margin-top: 1px; }
+
+  .section-label { font-size: 9px; font-weight: 700; color: rgba(255,255,255,.25); letter-spacing: 1.5px; text-transform: uppercase; padding: 0 10px; margin: 10px 0 4px; }
+
+  .nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; font-size: 11px; font-weight: 500; color: rgba(255,255,255,.45); cursor: pointer; transition: all .15s; }
+  .nav-item.active { background: rgba(255,255,255,.15); color: #fff; font-weight: 600; backdrop-filter: blur(4px); }
+  .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.55); margin-left: auto; }
+  .nav-badge { margin-left: auto; background: #0D9488; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 99px; }
+  .icon-sq { width: 14px; height: 14px; border-radius: 3px; background: currentColor; opacity: .5; flex-shrink: 0; }
+  .nav-item.active .icon-sq { opacity: 1; }
+
+  /* ── Main area ── */
+  .main { flex: 1; background: #F4F2FF; overflow: hidden; display: flex; flex-direction: column; }
+
+  .topbar { background: #fff; border-bottom: 1px solid #EDE9FE; padding: 11px 18px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .topbar-title { font-size: 13px; font-weight: 700; color: #1E1B4B; }
+  .topbar-sub { font-size: 10px; color: #A89FC8; margin-top: 1px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #7C3AED, #A78BFA); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; }
+
+  .content { padding: 14px; flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 11px; }
+
+  /* Stat cards */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .card { background: #fff; border-radius: 12px; border: 1px solid #EDE9FE; border-left-width: 4px; padding: 10px 12px; }
+  .card-num { font-size: 20px; font-weight: 900; }
+  .card-label { font-size: 9px; color: #A89FC8; text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+  .card-icon { display: inline-block; width: 22px; height: 22px; border-radius: 7px; margin-bottom: 6px; }
+
+  /* Table card */
+  .table-card { background: #fff; border-radius: 12px; border: 1px solid #EDE9FE; overflow: hidden; flex: 1; }
+  .tabs { display: flex; border-bottom: 1px solid #F4F2FF; padding: 0 12px; }
+  .tab { font-size: 10px; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid transparent; color: #A89FC8; cursor: pointer; }
+  .tab.active { border-bottom-color: #7C3AED; color: #7C3AED; }
+  .table-head { display: flex; padding: 6px 12px; background: #FAFAFE; border-bottom: 1px solid #F4F2FF; }
+  .th { font-size: 9px; font-weight: 700; color: #A89FC8; text-transform: uppercase; letter-spacing: .5px; flex: 1; }
+  .tr { display: flex; padding: 8px 12px; border-bottom: 1px solid #FAFAFE; align-items: center; gap: 8px; }
+  .tr:last-child { border-bottom: none; }
+  .td { font-size: 11px; color: #374151; flex: 1; }
+  .td-name { font-weight: 600; color: #1E1B4B; }
+  .td-sub { font-size: 9px; color: #A89FC8; }
+
+  /* Badge */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 600; }
+  .b-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 7px; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 9px; font-size: 11px; font-weight: 600; color: #fff; border: none; cursor: pointer; }
+
+  /* ── Swatches ── */
+  .swatches { display: flex; gap: 12px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .sw { width: 44px; height: 44px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  .sw-hex { font-size: 9px; color: #7C6FAD; font-family: monospace; font-weight: 600; }
+  .sw-name { font-size: 9px; color: #A89FC8; }
+</style>
+</head>
+<body>
+
+<h1>Combinación final — Academia CREAR</h1>
+<p class="subtitle">Púrpura profundo · Teal · Fondo lavanda · Primary #7C3AED</p>
+
+<div class="row">
+  <div class="mockup-wrap">
+    <div class="mockup">
+      <div class="shell">
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+          <div class="logo-row">
+            <div class="logo-icon">C</div>
+            <div>
+              <div class="logo-text">CREAR</div>
+              <div class="logo-sub">Academia</div>
+            </div>
+          </div>
+
+          <div class="section-label">Principal</div>
+          <div class="nav-item active">
+            <span class="icon-sq" style="color:#fff"></span>
+            Dashboard
+            <div class="nav-dot"></div>
+          </div>
+
+          <div class="section-label">Gestión</div>
+          <div class="nav-item">
+            <span class="icon-sq" style="color:rgba(255,255,255,.45)"></span>
+            Alumnos
+          </div>
+          <div class="nav-item">
+            <span class="icon-sq" style="color:rgba(255,255,255,.45)"></span>
+            Grupos
+          </div>
+          <div class="nav-item">
+            <span class="icon-sq" style="color:rgba(255,255,255,.45)"></span>
+            Inscripciones
+          </div>
+          <div class="nav-item">
+            <span class="icon-sq" style="color:rgba(255,255,255,.45)"></span>
+            Pagos
+            <span class="nav-badge">3</span>
+          </div>
+          <div class="nav-item">
+            <span class="icon-sq" style="color:rgba(255,255,255,.45)"></span>
+            Profesores
+          </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+          <div class="topbar">
+            <div>
+              <div class="topbar-title">Dashboard</div>
+              <div class="topbar-sub">Resumen general de la academia</div>
+            </div>
+            <div class="avatar">A</div>
+          </div>
+
+          <div class="content">
+            <!-- Stat cards -->
+            <div class="cards">
+              <div class="card" style="border-left-color:#7C3AED">
+                <div class="card-icon" style="background:#EDE9FE"></div>
+                <div class="card-num" style="color:#7C3AED">24</div>
+                <div class="card-label">Alumnos</div>
+              </div>
+              <div class="card" style="border-left-color:#8B5CF6">
+                <div class="card-icon" style="background:#F3EEFF"></div>
+                <div class="card-num" style="color:#8B5CF6">5</div>
+                <div class="card-label">Grupos</div>
+              </div>
+              <div class="card" style="border-left-color:#F59E0B">
+                <div class="card-icon" style="background:#FEF3C7"></div>
+                <div class="card-num" style="color:#F59E0B">3</div>
+                <div class="card-label">Pendientes</div>
+              </div>
+              <div class="card" style="border-left-color:#0D9488">
+                <div class="card-icon" style="background:#CCFBF1"></div>
+                <div class="card-num" style="color:#0D9488">18</div>
+                <div class="card-label">Con clases</div>
+              </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-card">
+              <div class="tabs">
+                <div class="tab active">Todas</div>
+                <div class="tab">Activas</div>
+                <div class="tab">Bajas</div>
+              </div>
+              <div class="table-head">
+                <div class="th">Alumno</div>
+                <div class="th">Grupo</div>
+                <div class="th">Estado</div>
+                <div class="th" style="text-align:right">Acción</div>
+              </div>
+              <div class="tr">
+                <div class="td"><div class="td-name">García, Ana</div><div class="td-sub">DNI: 38.123.456</div></div>
+                <div class="td" style="color:#6B7280">Ballet Inicial</div>
+                <div class="td"><span class="badge" style="background:#CCFBF1;color:#0F766E"><span class="b-dot" style="background:#0D9488"></span>activa</span></div>
+                <div class="td" style="text-align:right"><span style="font-size:10px;color:#7C3AED;font-weight:600;cursor:pointer">Ver recibo</span></div>
+              </div>
+              <div class="tr">
+                <div class="td"><div class="td-name">López, Sofía</div><div class="td-sub">DNI: 40.987.654</div></div>
+                <div class="td" style="color:#6B7280">Contemporáneo</div>
+                <div class="td"><span class="badge" style="background:#EDE9FE;color:#6D28D9"><span class="b-dot" style="background:#7C3AED"></span>activa</span></div>
+                <div class="td" style="text-align:right"><span style="font-size:10px;color:#7C3AED;font-weight:600;cursor:pointer">Ver recibo</span></div>
+              </div>
+              <div class="tr">
+                <div class="td"><div class="td-name">Martínez, Lucía</div><div class="td-sub">DNI: 42.345.678</div></div>
+                <div class="td" style="color:#6B7280">Jazz Avanzado</div>
+                <div class="td"><span class="badge" style="background:#FEF3C7;color:#92400E"><span class="b-dot" style="background:#F59E0B"></span>espera</span></div>
+                <div class="td" style="text-align:right"><span style="font-size:10px;color:#6B7280;font-weight:600;cursor:pointer">—</span></div>
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="btn-row">
+              <button class="btn" style="background:#7C3AED">+ Nueva inscripción</button>
+              <button class="btn" style="background:#0D9488">Generar cuotas</button>
+              <button class="btn" style="background:#fff;color:#374151;border:1px solid #EDE9FE">Cancelar</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Swatches -->
+    <div class="swatches">
+      <div class="swatch">
+        <div class="sw" style="background:linear-gradient(160deg,#2E1065,#3B0764)"></div>
+        <div class="sw-hex">#2E1065</div>
+        <div class="sw-name">Sidebar</div>
+      </div>
+      <div class="swatch">
+        <div class="sw" style="background:#7C3AED"></div>
+        <div class="sw-hex">#7C3AED</div>
+        <div class="sw-name">Primary</div>
+      </div>
+      <div class="swatch">
+        <div class="sw" style="background:#0D9488"></div>
+        <div class="sw-hex">#0D9488</div>
+        <div class="sw-name">Teal</div>
+      </div>
+      <div class="swatch">
+        <div class="sw" style="background:#F59E0B"></div>
+        <div class="sw-hex">#F59E0B</div>
+        <div class="sw-name">Amber</div>
+      </div>
+      <div class="swatch">
+        <div class="sw" style="background:#F4F2FF;border:1px solid #DDD8F5"></div>
+        <div class="sw-hex">#F4F2FF</div>
+        <div class="sw-name">Fondo</div>
+      </div>
+      <div class="swatch">
+        <div class="sw" style="background:#FFFFFF;border:1px solid #EDE9FE"></div>
+        <div class="sw-hex">#FFFFFF</div>
+        <div class="sw-name">Cards</div>
+      </div>
+    </div>
+
+    <p style="text-align:center;margin-top:20px;font-size:11px;color:#7C6FAD;line-height:1.6">
+      Si te convence, decís <strong>"aplicar"</strong> y se actualiza todo el sistema automáticamente.<br>
+      Si querés ajustar algo (sidebar más claro, fondo más neutro, etc.) también podemos.
+    </p>
+  </div>
+</div>
+
+</body>
+</html>
