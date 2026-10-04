@@ -40,6 +40,21 @@ export function infoEstadoCuota(estado) {
   return ESTADOS_CUOTA[estado] ?? ESTADOS_CUOTA.PENDIENTE
 }
 
+// Vestuario tiene su propio enum de estado — no reusar ESTADOS_CUOTA.
+// Confirmado contra app/services/vestuario_service.py antes de armar este
+// mapa: PENDIENTE/PAGO_PARCIAL/PAGADO, sin EN_MORA (vestuario no tiene
+// mora) y "PAGADO" en masculino (cargo), no "PAGADA" (cuota) como el de
+// arriba.
+const ESTADOS_CUOTA_VESTUARIO = {
+  PENDIENTE: { label: 'Pendiente', classes: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' },
+  PAGO_PARCIAL: { label: 'Parcial', classes: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' },
+  PAGADO: { label: 'Pagado', classes: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
+}
+
+export function infoEstadoCuotaVestuario(estado) {
+  return ESTADOS_CUOTA_VESTUARIO[estado] ?? ESTADOS_CUOTA_VESTUARIO.PENDIENTE
+}
+
 // `icono` es una clave, no un componente — este módulo es puro (sin React).
 // Quien renderiza (Pagos.jsx, ComprobanteModal.jsx) mapea la clave a un
 // ícono real. Se usan íconos SVG en vez de emojis para no mezclar dos
@@ -71,12 +86,6 @@ export function formatMesLabel(periodo) {
     new Date(`${periodo}-01T00:00:00`)
   )
   return texto.charAt(0).toUpperCase() + texto.slice(1)
-}
-
-export function estadoCupo(clase) {
-  if (clase.cupoDisponible === 0) return { lleno: true, label: 'Cupo lleno' }
-  if (clase.cupoDisponible <= 2) return { lleno: false, label: `¡Últimos ${clase.cupoDisponible} lugares!` }
-  return { lleno: false, label: `${clase.cupoDisponible} lugares disponibles` }
 }
 
 // CalificacionDeLaHija.notas real: { [criterio_id]: nota }, sin escala

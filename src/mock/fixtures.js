@@ -7,20 +7,6 @@ export const proximoEventoDemo = {
   id: 'ev1', titulo: 'Gala Anual CREAR', fecha: '2026-09-30', diasRestantes: 13,
 }
 
-// cupoDisponible de Jazz en 2 (no 3, como en el enunciado original) para que
-// las 3 clases del mock efectivamente muestren los 3 casos de estadoCupo()
-// (normal / lleno / últimos lugares) — con 3 caía en "normal" igual que
-// Folklore y el caso "últimos lugares" nunca se veía en la demo.
-export const clasesDisponiblesDemo = [
-  { id: 'g2', nombre: 'Jazz', nivel: 'Inicial', horario: 'Martes 17:00–18:00', profesora: 'Martina Bordon', cupoDisponible: 2, capacidad: 15 },
-  { id: 'g3', nombre: 'Danza Contemporánea', nivel: 'Intermedio', horario: 'Jueves 18:30–19:30', profesora: 'Lorena Cosanelli', cupoDisponible: 0, capacidad: 12 },
-  { id: 'g4', nombre: 'Folklore', nivel: 'Inicial', horario: 'Viernes 17:30–18:30', profesora: 'Ainara Sosa', cupoDisponible: 5, capacidad: 20 },
-]
-
-// Estado de inscripción en curso, separado del mock de arriba porque
-// cambia con la interacción del usuario, no es un dato "fijo" de ejemplo
-export const solicitudesInscripcionDemo = {} // { [claseId]: 'pendiente' | 'lista_espera' }
-
 // titulo sale de examen.descripcion en el modelo real (texto libre que
 // carga la profesora, no un enum "Final/Parcial")
 export const evaluacionesDemo = [

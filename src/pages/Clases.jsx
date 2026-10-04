@@ -3,30 +3,82 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
+import Spinner from '../components/ui/Spinner'
 import ClaseDetalleModal from '../components/ClaseDetalleModal'
 import { AlumnoActivoContext } from '../context/AlumnoActivoContext'
 import { useToast } from '../context/ToastContext'
-// MOCK A PROPÓSITO — el cupo por clase no existe en el modelo real todavía
-// (ver backend/SCHEMA.md), así que "Clases disponibles" sigue mockeada acá
-// mismo. "Mis clases" en cambio sale de alumnoActivo.clases (/portal/hijas
-// ya lo trae, no hace falta un endpoint aparte).
-import { clasesDisponiblesDemo, solicitudesInscripcionDemo } from '../mock/fixtures'
-import { estadoCupo } from '../utils/format'
+import { useClasesDisponibles } from '../hooks/useClasesDisponibles'
 
-const MENSAJE_SOLICITUD = {
-  inscripcion: 'Solicitud enviada. La academia va a confirmar tu lugar.',
-  lista_espera: 'Te anotamos en la lista de espera. Te avisamos si se libera un lugar.',
+// La solicitud más reciente de esta alumna para esta comisión decide qué
+// mostrar. "atendida" no tiene un caso de UI propio a propósito: si la
+// secretaría la atendió de verdad (aceptándola), la comisión ya debería
+// aparecer en alumnoActivo.clases y quedar filtrada más abajo por "ya
+// cursa" — tratarla como "sin solicitud" es el comportamiento correcto
+// para el caso raro de que no sea así (ver Claude.md).
+function solicitudVigente(solicitudes, comisionId) {
+  return solicitudes.find((s) => s.comision_id === comisionId) ?? null
 }
 
-const ESTADO_SOLICITUD_LABEL = {
-  inscripcion: 'Pendiente de confirmación',
-  lista_espera: 'En lista de espera',
-}
+function TarjetaComision({ comision, solicitud, nombreAlumna, onSolicitar }) {
+  const [enviando, setEnviando] = useState(false)
+  const [errorServidor, setErrorServidor] = useState('')
+  const sinCupo = comision.vacantes_disponibles === 0
+  const pendiente = solicitud?.estado === 'pendiente'
+  const descartada = solicitud?.estado === 'descartada'
 
-function BadgeCupo({ clase }) {
-  const { lleno, label } = estadoCupo(clase)
-  const color = lleno ? 'red' : clase.cupoDisponible <= 2 ? 'yellow' : 'green'
-  return <Badge color={color}>{label}</Badge>
+  async function handleSolicitar() {
+    setEnviando(true)
+    setErrorServidor('')
+    try {
+      await onSolicitar(comision.id)
+    } catch (err) {
+      setErrorServidor(err.message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <li className={`rounded-xl border border-gray-100 p-3 transition-opacity ${sinCupo ? 'opacity-50' : ''}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-800 truncate">{comision.disciplina_nombre}</p>
+          <p className="text-xs text-gray-400 truncate">{comision.nivel} · {comision.dias_horarios}</p>
+          {comision.docente_nombre && <p className="text-xs text-gray-400 truncate">{comision.docente_nombre}</p>}
+        </div>
+        <Badge color={sinCupo ? 'red' : comision.vacantes_disponibles <= 2 ? 'yellow' : 'green'}>
+          {sinCupo ? 'Sin cupo' : `${comision.vacantes_disponibles} de ${comision.cupo_maximo} lugares`}
+        </Badge>
+      </div>
+
+      {errorServidor && (
+        <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded-xl text-xs mt-2.5">
+          {errorServidor}
+        </div>
+      )}
+
+      {pendiente ? (
+        <Button variant="secondary" size="sm" className="w-full justify-center mt-2.5" disabled>
+          Ya enviado
+        </Button>
+      ) : sinCupo ? null : (
+        <>
+          {descartada && (
+            <p className="text-[11px] text-gray-400 mt-2.5 mb-1">Tu pedido anterior no pudo aceptarse.</p>
+          )}
+          <Button
+            variant="primary"
+            size="sm"
+            className="w-full justify-center mt-1"
+            onClick={handleSolicitar}
+            disabled={enviando}
+          >
+            {enviando ? 'Enviando...' : `Pedir lugar para ${nombreAlumna}`}
+          </Button>
+        </>
+      )}
+    </li>
+  )
 }
 
 export default function Clases() {
@@ -35,11 +87,14 @@ export default function Clases() {
   const misClases = alumnoActivo?.clases ?? []
   const toast = useToast()
   const [claseDetalle, setClaseDetalle] = useState(null)
-  const [solicitudes, setSolicitudes] = useState({ ...solicitudesInscripcionDemo })
+  const { comisiones, solicitudes, cargando, error, solicitar } = useClasesDisponibles()
 
-  function handleSolicitar(claseId, tipo) {
-    setSolicitudes((prev) => ({ ...prev, [claseId]: tipo }))
-    toast(MENSAJE_SOLICITUD[tipo])
+  const comisionesYaCursadas = new Set(misClases.map((c) => c.comision_id))
+  const disponibles = comisiones.filter((c) => !comisionesYaCursadas.has(c.id))
+
+  async function handleSolicitar(comisionId) {
+    await solicitar(comisionId)
+    toast('Solicitud enviada. La academia va a confirmar el lugar.')
   }
 
   return (
@@ -78,52 +133,31 @@ export default function Clases() {
 
       {/* Clases disponibles */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">Clases disponibles</h3>
-        <ul className="space-y-3">
-          {clasesDisponiblesDemo.map((clase) => {
-            const { lleno } = estadoCupo(clase)
-            const solicitud = solicitudes[clase.id]
-            const deshabilitada = lleno && !solicitud
+        <h3 className="text-sm font-semibold text-gray-800 mb-1">Clases disponibles</h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Al pedir un lugar, la secretaría lo revisa, confirma la inscripción y te genera la cuota. No queda
+          inscripta hasta entonces.
+        </p>
 
-            return (
-              <li
-                key={clase.id}
-                className={`rounded-xl border border-gray-100 p-3 transition-opacity ${deshabilitada ? 'opacity-50' : ''}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{clase.nombre}</p>
-                    <p className="text-xs text-gray-400 truncate">{clase.nivel} · {clase.horario}</p>
-                    <p className="text-xs text-gray-400 truncate">{clase.profesora}</p>
-                  </div>
-                  <BadgeCupo clase={clase} />
-                </div>
-
-                {solicitud ? (
-                  <p className="text-xs font-medium text-primary mt-2.5">{ESTADO_SOLICITUD_LABEL[solicitud]}</p>
-                ) : lleno ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full justify-center mt-2.5"
-                    onClick={() => handleSolicitar(clase.id, 'lista_espera')}
-                  >
-                    Anotarme en lista de espera
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full justify-center mt-2.5"
-                    onClick={() => handleSolicitar(clase.id, 'inscripcion')}
-                  >
-                    Inscribirme
-                  </Button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        {cargando ? (
+          <Spinner className="py-6" />
+        ) : error ? (
+          <p className="text-xs text-red-500">No se pudieron cargar las clases disponibles. Probá de nuevo en un momento.</p>
+        ) : disponibles.length === 0 ? (
+          <p className="text-xs text-gray-400">No hay clases con lugar disponible por ahora.</p>
+        ) : (
+          <ul className="space-y-3">
+            {disponibles.map((comision) => (
+              <TarjetaComision
+                key={comision.id}
+                comision={comision}
+                solicitud={solicitudVigente(solicitudes, comision.id)}
+                nombreAlumna={alumnoActivo?.nombre_completo ?? 'tu hija'}
+                onSolicitar={handleSolicitar}
+              />
+            ))}
+          </ul>
+        )}
       </div>
 
       <ClaseDetalleModal isOpen={claseDetalle !== null} onClose={() => setClaseDetalle(null)} clase={claseDetalle} />

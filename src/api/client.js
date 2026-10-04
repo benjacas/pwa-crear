@@ -123,9 +123,45 @@ export async function getPagosHija(alumnoId) {
   return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/pagos`)
 }
 
+// VestuarioDeLaHija[]: { id, descripcion, costo_total, cantidad_cuotas,
+// saldo_total, listo_para_entrega, cuotas: CuotaVestuarioDeLaFamilia[],
+// pagos: PagoVestuarioDeLaFamilia[] } — el campo se llama `cuotas`, no
+// `cargos`. Estados reales de cuota de vestuario: PENDIENTE/PAGO_PARCIAL/
+// PAGADO (sin EN_MORA — vestuario no tiene mora, confirmado contra
+// app/services/vestuario_service.py).
+export async function getVestuarioHija(alumnoId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/vestuario`)
+}
+
 export async function getAsistenciaHija(alumnoId, mes) {
   const query = mes ? `?mes=${mes}` : ''
   return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/asistencia${query}`)
+}
+
+// ComisionResponse[], ya sin profesorados y sin las que están sin cupo —
+// el propio backend las excluye (cupo_maximo - inscriptos <= 0), nunca
+// llegan acá con vacantes_disponibles: 0 (confirmado leyendo
+// app/api/v1/portal.py antes de asumirlo).
+export async function getComisionesDisponibles() {
+  return fetchConToken(`${API_URL}/api/v1/portal/comisiones-disponibles`)
+}
+
+// SolicitudInscripcionDeLaHija[], estado real: pendiente/atendida/descartada
+// (migración 035_solicitudes_inscripcion.py) — no solo pendiente/descartada.
+export async function getMisSolicitudes(alumnoId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/solicitudes-inscripcion`)
+}
+
+// El backend NO rechaza pedir un lugar en una comisión donde la alumna ya
+// está inscripta (solo valida que no haya otra solicitud pendiente para la
+// misma alumna+comisión) — el filtro de "no mostrar lo que ya cursa" del
+// lado del cliente es la única defensa real contra eso, no un adorno.
+export async function solicitarInscripcion(alumnoId, comisionId, mensaje) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/solicitudes-inscripcion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ comision_id: comisionId, mensaje: mensaje || null }),
+  })
 }
 
 // TutorResponse: mi propia ficha de tutor (datos de contacto), no confundir

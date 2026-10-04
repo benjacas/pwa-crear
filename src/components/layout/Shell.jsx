@@ -9,7 +9,7 @@ import { useMisEntradas } from '../../hooks/useMisEntradas'
 // avatar. Header se renderiza una sola vez acá (layout compartido con
 // <Outlet/>), así que ninguna página puede pasarle la prop directamente;
 // por eso la decisión se toma acá, mirando la ruta actual.
-const RUTAS_CON_VOLVER = ['/perfil', '/notificaciones', '/horarios', '/mis-entradas']
+const RUTAS_CON_VOLVER = ['/perfil', '/notificaciones', '/horarios', '/mis-entradas', '/vestuario']
 
 function tieneVolver(pathname) {
   return RUTAS_CON_VOLVER.includes(pathname) || pathname.startsWith('/eventos')

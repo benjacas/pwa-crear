@@ -472,14 +472,13 @@ contra `VITE_API_URL` (default `http://localhost:8000`).
     tarjeta "Próx. evento" de Home sigue con `proximoEventoDemo` (dato
     simple, no es parte de esta tarea) — es el único resabio de mock que
     queda visible en el portal para Eventos.
-  - "Vestuario" (por evento) — sin endpoint en el backend real, mock
-    indefinido (`vestuarioPorEventoDemo`). **Se sacó del todo de Home**
-    (ni siquiera en estado "Próximamente") — decisión revisada en la fase
-    de pulido, ver "Decisiones de producto" abajo. El criterio de
-    "Próximamente" (deshabilitado, visible pero no funcional) sigue
-    vigente para otras features pendientes de modelo de datos que si se
-    agreguen a futuro — acá se decidió directamente no mostrar el
-    placeholder porque no aportaba nada sin fecha de entrega prevista.
+  - ~~"Vestuario" (por evento) — sin endpoint en el backend real, mock
+    indefinido~~ **conectada de verdad, ver Tarea L más abajo** — pero
+    como `/vestuario` **de la alumna en general**, no por evento (el
+    endpoint real no permite filtrar por evento). `vestuarioPorEventoDemo`
+    y `VestuarioEvento.jsx` (el viejo, por evento) siguen existiendo sin
+    tocar — ver la nota de alcance en la Tarea G sobre archivos de diseño
+    que se conservan sin ruta de navegación real.
   - ~~Evaluaciones — sin endpoint en el backend real, mock indefinido~~
     **conectada de verdad, ver Tarea H más abajo.** El módulo M3 que no
     existía cuando se escribió esta lista terminó apareciendo del lado de
@@ -2099,13 +2098,11 @@ validar con la compañera antes de tocar Postgres.
 
 ## Decisiones de producto (cont.)
 
-- **Cupo por clase (`cupoDisponible`/`capacidad`) está mockeado y sin
-  confirmar contra el schema real.** No hay certeza todavía de que el
-  backend nuevo (FastAPI) vaya a modelar el cupo de un grupo exactamente
-  así (dos números sueltos) — podría terminar siendo calculado
-  (`capacidad - inscriptos.count()`) en vez de un campo propio. No bloquea
-  construir la UI del portal ahora, pero hay que confirmar la forma real
-  antes de conectar `useClases` a la API.
+- ~~Cupo por clase (`cupoDisponible`/`capacidad`) está mockeado y sin
+  confirmar contra el schema real~~ **conectado de verdad, ver Tarea M más
+  abajo.** Se confirmó: es justo lo que esta nota anticipaba como posible
+  — `vacantes_disponibles` viene **calculado** del lado del backend
+  (`cupo_maximo - inscriptos_activos`), no es un campo propio editable.
 - **Flujo de inscripción / lista de espera — decisión de producto ya
   tomada, no volver a discutirla al conectar el backend:** el alumno/tutor
   nunca queda inscripto de forma directa al tocar un botón — siempre
@@ -2782,6 +2779,137 @@ lado del portal.
   real con una alumna de la base forzada a `fecha_apto` vencida (UPDATE
   manual + revertir después), como pedía la tarea** — no se hizo en esta
   pasada.
+
+  ## Pendiente: Vestuario — ver y pagar desde el portal (bloqueado en diseño, no en código)
+
+Ver el vestuario de una alumna es chico (GET /vestuarios?alumno_id= ya existe, falta
+el endpoint de portal que lo filtre). Pagarlo online es grande: confirmado que
+`OrdenPago.cuota_id` es una FK fija a `cuotas`, no genérica — todo
+`CobroElectronicoService` (enlace de pago, webhook, acreditación) está escrito
+específicamente para cuotas mensuales, no para cualquier cargo.
+
+Extender esto a vestuario implica una decisión de arquitectura real (¿`OrdenPago`
+pasa a ser polimórfica, o se duplica el mecanismo para un segundo tipo de cargo?)
+que le corresponde a la compañera tanto como a nosotros, dado que toca un sistema
+de cobros con dinero real ya en uso. Pendiente de hablarlo con ella antes de
+escribir código — no empezar esta tarea sin esa conversación primero.
+(**Nota de la Tarea L:** esa conversación ya no hace falta para la parte
+de *lectura* — el backend real terminó con su propio modelo de vestuario,
+no una extensión polimórfica de `OrdenPago`: `CuentaVestuario`/`CargoVestuario`
+aparte, con su propio enum de estado. La decisión de arquitectura de más
+arriba sigue siendo relevante si en algún momento se quiere *pagar*
+vestuario desde el portal, no solo verlo.)
+
+## Tarea L — Vestuario, pantalla nueva
+
+`/vestuario` conectada de verdad — cuotas y pagos de vestuario de la
+alumna activa, **sin filtro por evento** (el backend no lo permite:
+`GET /portal/hijas/{id}/vestuario` devuelve todas las cuentas de la
+alumna, no una por evento).
+
+- **Confirmado contra `crear-backend` antes de armar los badges de
+  estado, tal como pedía la consigna:** el enum de vestuario es distinto
+  al de cuotas mensuales — `PENDIENTE`/`PAGO_PARCIAL`/`PAGADO` (masculino,
+  "cargo"), **sin `EN_MORA`** (vestuario no tiene mora, confirmado
+  leyendo `vestuario_service.py`). `infoEstadoCuotaVestuario()` nueva en
+  `format.js`, separada de `infoEstadoCuota()` — no se reusó.
+- **El campo real se llama `cuotas`, no `cargos`** como decía el mensaje
+  (`VestuarioDeLaHija.cuotas: List[CuotaVestuarioDeLaFamilia]`, en
+  `app/schemas/portal.py`).
+- **Corrección a la consigna, verificada antes de aplicarla:** el mensaje
+  decía "sin ningún botón de descarga, no existe el endpoint" para los
+  pagos de vestuario — **no es así**. `PortalService.recibo()` busca el
+  `pago_id` tanto en pagos de cuota como en pagos de vestuario
+  (`propios = {...cuotas} | {...vestuario}`), y
+  `CobroService.generar_recibo()` tiene una rama completa para vestuario
+  (`get_datos_recibo_vestuario`, concepto
+  `"Vestuario: {descripción} - cuota N/M"`) — genera un PDF real, no un
+  stub. Como ya estaba `descargarRecibo(alumnoId, pagoId)` de la Tarea D
+  (usado en `ComprobanteModal.jsx` para cuotas), se reusó acá tal cual
+  para los pagos no anulados — mismo patrón de descarga
+  (`URL.createObjectURL` + `<a download>`).
+- `api/client.js`: `getVestuarioHija(alumnoId)`. `hooks/useVestuario.js`
+  (nuevo), mismo patrón que el resto de los hooks de recurso.
+- `pages/Vestuario.jsx` (nueva): por cuenta — descripción + badge "Listo
+  para entrega" si corresponde, barra de progreso (`costo_total -
+  saldo_total` pagado de `costo_total`), lista de cuotas con su badge de
+  estado, lista de pagos con ícono de descarga (o badge "Anulado" en vez
+  del ícono, sin descarga, para los anulados). Estado vacío real si
+  `cuentas` es `[]`.
+- `Eventos.jsx`: tarjeta "Vestuario" (ícono `Shirt`, subtítulo "Cuotas y
+  pagos de disfraces/trajes") **arriba de la cartelera, como sección
+  aparte** — no adentro de `EventoDetalle.jsx`, que insinuaría un vínculo
+  con un evento puntual que no existe. `Shell.jsx`:
+  `/vestuario` sumada a `RUTAS_CON_VOLVER` (header con flecha "volver", no
+  el avatar — mismo criterio que `/perfil`/`/mis-entradas`/etc.).
+- Verificado con Playwright: una hija con una cuenta real (3 cuotas en
+  los 3 estados posibles, 3 pagos — uno con medio efectivo, uno con
+  transferencia, uno anulado) muestra la descripción, la barra de
+  progreso, los 3 badges de estado correctos, y el pago anulado con su
+  badge rojo **sin** ícono de descarga; la descarga de un pago real
+  disparó un PDF de verdad con el nombre del comprobante
+  (`V-2026-001.pdf`); una segunda hija sin vestuario muestra el estado
+  vacío con su nombre. La tarjeta "Vestuario" en Eventos quedó separada
+  de la cartelera, sin insinuar que pertenece a un evento — capturas en
+  el hilo. Sin errores de consola.
+
+## Tarea M — Clases disponibles real
+
+`Clases.jsx` ("Clases disponibles") dejó de usar `clasesDisponiblesDemo` —
+ahora pide de verdad a `/portal/comisiones-disponibles` y deja pedir un
+lugar con `/hijas/{id}/solicitudes-inscripcion`.
+
+- **Dos cosas confirmadas contra el backend real antes de armar la UI,
+  tal como pedía el paso 0, con un resultado distinto al esperado en
+  ambas:**
+  1. `/comisiones-disponibles` **ya excluye** las comisiones sin cupo del
+     lado del servidor (`app/api/v1/portal.py`:
+     `if c.cupo_maximo - inscriptos <= 0: continue`) — **nunca** llegan
+     con `vacantes_disponibles: 0`. La rama "Sin cupo" de la UI está
+     implementada (es gratis, no rompe nada tenerla por robustez), pero
+     **no hay forma de probarla contra el backend real tal como está
+     hoy** — el paso de "Al terminar" que pedía buscar la comisión llena
+     de la demo no se puede cumplir, se verificó simulándola en un mock
+     aparte, dejado aclarado en el propio test.
+  2. El backend **no rechaza** pedir un lugar en una comisión donde la
+     alumna ya está inscripta — `SolicitudInscripcionService.crear()`
+     solo valida que no haya otra solicitud *pendiente* de la misma
+     alumna+comisión, nada sobre inscripciones activas. El filtro del
+     lado del cliente (comparar `comision.id` contra los `comision_id` de
+     `alumnoActivo.clases`) es la única defensa real, no un adorno.
+  3. **Hallazgo extra, no pedido pero necesario para la UI:** el estado
+     real de una solicitud tiene **tres** valores, no dos —
+     `pendiente`/`atendida`/`descartada` (migración
+     `035_solicitudes_inscripcion.py`), no solo
+     "pendiente, o descartada" como daba a entender el mensaje. `atendida`
+     no tiene un caso de UI propio a propósito: si la secretaría la
+     atendió de verdad (aceptándola), la comisión ya debería aparecer en
+     `alumnoActivo.clases` y quedar filtrada por "ya cursa" — se trata
+     igual que "sin solicitud" para el caso raro de que no sea así.
+- `api/client.js`: `getComisionesDisponibles()`, `getMisSolicitudes(alumnoId)`,
+  `solicitarInscripcion(alumnoId, comisionId, mensaje)`.
+  `hooks/useClasesDisponibles.js` (nuevo): lee `alumnoActivo` del contexto
+  directamente (no recibe `alumnoId` por parámetro), trae comisiones y
+  solicitudes en paralelo, se vuelve a pedir solo cuando cambia el
+  `alumno_id` activo, y `solicitar()` agrega la solicitud devuelta al
+  estado local al toque (sin F5).
+- Un 409 real (`ERR_SOLICITUD_DUPLICADA`) se probó forzando el mismo
+  pedido dos veces desde la consola del navegador (la UI ya lo previene
+  mostrando "Ya enviado", así que no sale solo) — el mensaje real del
+  backend se mostró con el mismo mecanismo de `EditarContactoModal.jsx`
+  (`catch (err) { setErrorServidor(err.message) }`), nada crudo.
+- **Limpieza confirmada con grep antes de borrar:** `clasesDisponiblesDemo`
+  y `solicitudesInscripcionDemo` fuera de `mock/fixtures.js` (sin
+  consumidores tras la reescritura); `estadoCupo()` fuera de `format.js`
+  (solo lo usaba `Clases.jsx`).
+- Verificado con Playwright (`familia@demo.crear-academia.com`, Valentina
+  con una clase ya cursada): la comisión que Valentina ya cursa no
+  aparece en "disponibles"; pedir un lugar en Jazz cambia el botón a "Ya
+  enviado" sin recargar, con el toast de éxito; el 409 real al reenviar
+  mostró el mensaje real del backend; cambiando a Martina (sin clases
+  cursadas) la misma comisión Jazz vuelve a mostrar el botón activo —
+  confirma que las solicitudes son por alumna, no compartidas. Sin
+  errores de consola.
 
 ## Flujo de trabajo
 

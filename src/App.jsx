@@ -21,6 +21,7 @@ import EventoButacas from './pages/EventoButacas'
 import ResumenCompra from './pages/ResumenCompra'
 import MisEntradas from './pages/MisEntradas'
 import VestuarioEvento from './pages/VestuarioEvento'
+import Vestuario from './pages/Vestuario'
 
 export default function App() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="eventos/:id/resumen" element={<ResumenCompra />} />
                 <Route path="eventos/:id/vestuario" element={<VestuarioEvento />} />
                 <Route path="mis-entradas" element={<MisEntradas />} />
+                <Route path="vestuario" element={<Vestuario />} />
               </Route>
             </Route>
           </Routes>
