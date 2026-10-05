@@ -124,6 +124,16 @@ export function infoTipoNotificacion(tipo) {
   return TIPOS_NOTIFICACION[tipo] ?? { label: 'Aviso', classes: 'bg-gray-100 text-gray-500', icono: 'bell' }
 }
 
+// Notificaciones de cuota/pago vienen ahora del backend (NotificacionService,
+// solo CUOTA_NUEVA/CUOTA_VENCIDA/PAGO_RECIBIDO para el rol tutor) en vez de
+// calcularse acá. Se traducen a los mismos "tipo" visuales que ya usaba
+// TIPOS_NOTIFICACION para no duplicar clases/íconos. El fallback a 'general'
+// (sin entrada propia en TIPOS_NOTIFICACION, cae al "Aviso" genérico de
+// infoTipoNotificacion) es defensivo: ningún tipo actual de _de_la_familia()
+// cae ahí, pero si el backend agrega uno nuevo la pantalla no debe romperse.
+const TIPO_VISUAL_BACKEND = { CUOTA_NUEVA: 'cuota', CUOTA_VENCIDA: 'cuota', PAGO_RECIBIDO: 'pago' }
+export const tipoVisualDeBackend = (tipo) => TIPO_VISUAL_BACKEND[tipo] ?? 'general'
+
 // TipoEvento real (schemas/eventos.py): gala/festival/examen/otro — "examen"
 // nunca llega acá, /portal/eventos ya lo excluye del lado del backend.
 const TIPOS_EVENTO = {
@@ -157,6 +167,16 @@ const DIA_SEMANA_INDICE = { domingo: 0, lunes: 1, martes: 2, miercoles: 3, jueve
 // toISOString() (que pasa por UTC y corre el día — ver "Convenciones de código").
 function fechaLocalISO(anio, mes, dia) {
   return `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+}
+
+// Las notificaciones del backend traen `fecha` como datetime con timezone
+// (ej. 2026-10-05T01:00:00Z): un pago hecho a las 22hs de Argentina cae al
+// día siguiente en UTC. new Date(iso) lo pasa a hora local del navegador
+// (Argentina, UTC-3) y de ahí se arma el día calendario con fechaLocalISO
+// (mes base 0, igual que getMonth()) — nada de .toISOString(), que vuelve a UTC.
+export function fechaLocalDeInstante(iso) {
+  const d = new Date(iso)
+  return fechaLocalISO(d.getFullYear(), d.getMonth(), d.getDate())
 }
 
 // Vigencia del apto físico: 12 meses desde fecha_apto, con aviso los últimos 30 días. Deben coincidir con
@@ -346,33 +366,12 @@ function enNDiasISO(dias) {
 // lista de notificaciones, más mensaje (combina y ordena, a diferencia de
 // calcularAvisos() que recorta a 2 para Home) — hijas/cuentasCorrientes/
 // asistencias/evaluaciones/pagos vienen indexados por alumno_id.
-export function calcularNotificaciones({ hijas, cuentasCorrientes, asistencias, evaluaciones, eventos, pagos }) {
+export function calcularNotificaciones({ hijas, asistencias, evaluaciones, eventos }) {
   const notifs = []
   const hoy = hoyLocalISO()
   const en14DiasISO = enNDiasISO(14)
-  const hace30DiasISO = enNDiasISO(-30)
 
   for (const hija of hijas) {
-    const cuenta = cuentasCorrientes[hija.alumno_id]
-    for (const cuota of cuenta?.cuotas_pendientes ?? []) {
-      const mesCuota = formatMesLabel(cuota.periodo.slice(0, 7))
-      if (cuota.fecha_vencimiento < hoy) {
-        notifs.push({
-          id: `cuota-venc-${cuota.id}`, tipo: 'cuota', fecha: cuota.fecha_vencimiento,
-          titulo: 'Cuota vencida',
-          mensaje: `${hija.nombre_completo}: cuota de ${mesCuota} vencida.`,
-          ctaRuta: '/pagos',
-        })
-      } else if (cuota.fecha_vencimiento <= en14DiasISO) {
-        notifs.push({
-          id: `cuota-prox-${cuota.id}`, tipo: 'cuota', fecha: cuota.fecha_vencimiento,
-          titulo: 'Cuota por vencer',
-          mensaje: `${hija.nombre_completo}: cuota de ${mesCuota} vence el ${formatFecha(cuota.fecha_vencimiento)}.`,
-          ctaRuta: '/pagos',
-        })
-      }
-    }
-
     const asistencia = asistencias[hija.alumno_id]
     if (asistencia?.bajo_umbral) {
       notifs.push({
@@ -391,17 +390,6 @@ export function calcularNotificaciones({ hijas, cuentasCorrientes, asistencias, 
         mensaje: `${hija.nombre_completo}: ${apto.mensaje}`,
         ctaRuta: '/perfil',
       })
-    }
-
-    for (const pago of (pagos[hija.alumno_id] ?? []).filter((p) => !p.anulado)) {
-      if (pago.fecha_pago >= hace30DiasISO) {
-        notifs.push({
-          id: `pago-${pago.id}`, tipo: 'pago', fecha: pago.fecha_pago,
-          titulo: 'Pago confirmado',
-          mensaje: `${hija.nombre_completo}: ${pago.concepto} — ${formatMoneda(pago.monto)}.`,
-          ctaRuta: '/pagos',
-        })
-      }
     }
 
     // Aproximado: usa la fecha del examen, no el momento real de carga de la nota (no existe ese dato todavía)

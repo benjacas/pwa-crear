@@ -25,14 +25,23 @@ export default function Notificaciones() {
   if (cargando) return <Spinner className="mt-20" />
 
   const hayNoLeidas = notifs.some((n) => !n.leida)
+  // orden (timestamp numérico) en vez de fecha.localeCompare: desde que hay
+  // dos fuentes, fecha puede ser 'YYYY-MM-DD' (calculadas) o datetime local
+  // ya convertido (servidor) — comparar por string mezclaría mal los formatos.
   const ordenadas = [...notifs].sort((a, b) => {
     if (a.leida !== b.leida) return a.leida ? 1 : -1
-    return b.fecha.localeCompare(a.fecha)
+    return b.orden - a.orden
   })
 
-  function abrir(notificacion) {
-    marcarLeida(notificacion.id)
-    setSeleccionada(notificacion)
+  // Si tiene ctaRuta navega directo (todos los tipos actuales la tienen); el
+  // modal queda como respaldo para un futuro tipo 'general' sin ruta propia.
+  function abrir(n) {
+    marcarLeida(n)
+    if (n.ctaRuta) {
+      navigate(n.ctaRuta)
+    } else {
+      setSeleccionada(n)
+    }
   }
 
   return (

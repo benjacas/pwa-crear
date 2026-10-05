@@ -27,7 +27,9 @@ export default function Shell() {
   // ResumenCompra). Mismo motivo que ya aplicaba para notificaciones.
   const notificacionesApi = useNotificaciones()
   const misEntradasApi = useMisEntradas()
-  const noLeidas = notificacionesApi.notifs.filter((n) => !n.leida).length
+  // noLeidas del hook, no un conteo manual de notifs: incluye las pendientes
+  // del servidor que no entran en las últimas 30 que trae la lista.
+  const { noLeidas } = notificacionesApi
 
   return (
     <div className="flex flex-col h-svh max-w-md mx-auto bg-primary-subtle">

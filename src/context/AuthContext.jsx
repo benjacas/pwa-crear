@@ -56,6 +56,9 @@ export function AuthProvider({ children }) {
     // la sesión" en Claude.md), pero es estado de la misma sesión — limpiar
     // acá evita que quede huérfano después de cerrar sesión.
     localStorage.removeItem('crear_alumno_activo_id')
+    // Estado de lectura de las notificaciones calculadas localmente (ver
+    // useNotificaciones.js) — es por usuario, no debe sobrevivir a un logout.
+    localStorage.removeItem('crear_notifs_leidas')
     setAccessToken(null); setRefreshToken(null); setRol(null); setNombre(null); setDebeCambiarClave(false)
   }
 

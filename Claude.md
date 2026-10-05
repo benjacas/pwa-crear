@@ -2911,6 +2911,136 @@ lugar con `/hijas/{id}/solicitudes-inscripcion`.
   confirma que las solicitudes son por alumna, no compartidas. Sin
   errores de consola.
 
+## Tarea N — Notificaciones híbridas: servidor + calculadas
+
+`Notificaciones.jsx` pasó a combinar dos fuentes en vez de una. El
+backend sumó `NotificacionService` (tabla real, con estado de lectura
+server-side), pero solo para `tutor` y solo 3 tipos: `CUOTA_NUEVA`,
+`CUOTA_VENCIDA`, `PAGO_RECIBIDO` (confirmado en
+`services/notificacion_service.py`, rama `_de_la_familia()`). Los otros
+4 tipos que armaba `calcularNotificaciones()` desde Tarea J (asistencia,
+apto físico, nota cargada, evento) siguen calculándose 100% del lado del
+cliente — el backend no los tiene todavía.
+
+- **Reparto de fuentes:**
+  - Servidor (`getNotificaciones()`, `GET /api/v1/notificaciones`):
+    cuota/pago. `no_leidas` cuenta **todas** las pendientes, no solo las
+    últimas 30 que trae `items` (`LIMITE = 30` en el service) — el hook
+    usa ese número tal cual para el badge, no cuenta `items` a mano.
+  - Cliente (`calcularNotificaciones()`, recortada): asistencia, apto
+    físico, nota cargada, evento. `calcularAvisos()` (Home) no se tocó —
+    sigue con cuota/pago propios, es un aviso distinto con otro recorte
+    (2 items) y no es parte de este pedido.
+- `api/client.js`: `getNotificaciones()`, `marcarNotificacionLeida(id)`,
+  `marcarTodasLeidas(id)` — las dos últimas responden 204 sin cuerpo, ya
+  cubierto por el `if (res.status === 204) return null` que
+  `fetchConToken` ya tenía desde antes (no hizo falta tocarlo, la
+  "trampa" ya estaba resuelta).
+- `utils/format.js`:
+  - `calcularNotificaciones({hijas, asistencias, evaluaciones, eventos})`
+    — se sacaron las ramas de cuota (vencida/por vencer) y pago, y los
+    parámetros `cuentasCorrientes`/`pagos`. Quedan asistencia, apto
+    físico, nota cargada y evento tal cual estaban.
+  - `tipoVisualDeBackend(tipo)` nueva: traduce los 3 `tipo` reales del
+    backend a los mismos `'cuota'`/`'pago'` que ya usaba
+    `TIPOS_NOTIFICACION`, con fallback a `'general'` para un tipo futuro
+    que el backend todavía no manda.
+  - `fechaLocalDeInstante(iso)` nueva: el `fecha` del backend es datetime
+    con timezone (ej. `2026-10-05T01:30:00Z` = 22:30 Argentina del día
+    4) — se arma el día calendario con `new Date(iso)` + el
+    `fechaLocalISO` privado que ya existía (mes base 0, igual que
+    `getMonth()`, no hizo falta ajustarlo). Nada de `.toISOString()`
+    (bloqueado por el lint de Tarea K de todos modos).
+  - `infoTipoNotificacion()` **no se tocó**: el `?? {label: 'Aviso', ...,
+    icono: 'bell'}` que ya tenía de antes cubre cualquier `tipo` sin
+    entrada en `TIPOS_NOTIFICACION`, `'general'` incluido — agregar una
+    entrada explícita para `'general'` habría sido redundante.
+- `hooks/useNotificaciones.js` reescrito: `delServidor`/`noLeidasServidor`
+  (del `GET /notificaciones`) y `calculadas` (de
+  `calcularNotificaciones()`) se piden en paralelo con
+  `Promise.allSettled` — si una fuente falla la otra igual se muestra,
+  en vez de que un timeout de notificaciones tire abajo toda la pantalla.
+  Se combinan en un `notifs` memoizado, cada item con un `origen`
+  (`'server'`/`'local'`) y un `orden` numérico (`new Date(fecha).getTime()`
+  para servidor, mediodía local para calculadas — evita que la hora del
+  día mueva un item al lado equivocado de la medianoche al mezclar
+  ambas fuentes). `noLeidas = noLeidasServidor + no leídas de calculadas`
+  (nunca se cuenta `notifs.length`, por la razón de arriba). `marcarLeida`
+  bifurca por `origen`: servidor hace update optimista + POST +
+  rollback si falla (probado forzando un 500 en el mock: el item vuelve
+  a quedar sin leer y el badge recupera el número); local escribe
+  directo a `localStorage` (`crear_notifs_leidas`, mismo mecanismo de
+  Tarea J, nunca falla). `marcarTodas` hace ambas cosas a la vez.
+- `Notificaciones.jsx`: tocar una notificación ahora navega directo a
+  `ctaRuta` después de `marcarLeida(n)` (antes abría un modal con botón
+  "Ver más"); el modal queda como respaldo solo para el caso sin
+  `ctaRuta` (hoy inalcanzable, los 6 tipos actuales siempre la traen —
+  pensado para cuando el backend agregue un tipo nuevo sin ruta
+  resuelta). El orden de la lista pasó de `fecha.localeCompare()` a
+  `orden` numérico: con dos fuentes, `fecha` ya no es un formato único
+  (`'YYYY-MM-DD'` en calculadas vs. datetime completo convertido a local
+  en servidor) y compararlas como string ordenaba mal los empates de
+  mismo día.
+- `Shell.jsx`: el badge de la campanita pasó a leer `noLeidas` del hook
+  en vez de contar `notifs.filter(n => !n.leida).length` a mano (así
+  entran las pendientes fuera de las últimas 30). Confirmado que
+  `Shell.jsx` y `Notificaciones.jsx` ya comparten una sola instancia del
+  hook desde Tarea J/I (`useNotificaciones()` se llama una vez en
+  `Shell.jsx` y se pasa por `<Outlet context={{notificacionesApi}}/>`,
+  consumida con `useOutletContext()`) — no hizo falta agregar ningún
+  Provider nuevo.
+- `AuthContext.jsx`: `logout()` ahora también borra
+  `crear_notifs_leidas` — es estado de lectura por usuario, no debía
+  sobrevivir a un cambio de sesión en la misma pestaña.
+- **Verificado con un mock de Node + Playwright, no contra el backend
+  real**: había un backend real con Docker/Postgres corriendo en esta
+  sesión (aparentemente para las pruebas manuales que pide este mismo
+  pedido — SQL de la cuota de Clara, evento de Swagger), así que se
+  evitó tocarlo para no pisar esos datos; se armó un mock aparte en otro
+  puerto. Casos probados: una notificación de servidor (`CUOTA_VENCIDA`,
+  `fecha` a las 22:30 Arg del día anterior en UTC) y una calculada
+  (evento dentro de los 14 días) aparecen juntas, sin duplicados,
+  ordenadas por `orden`; la cuota se muestra "Ayer" y no "Hoy" (confirma
+  que la conversión de timezone no corre el día); tocar cada una navega
+  a su `ctaRuta` (`/pagos` y `/eventos/{id}` respectivamente) y marca
+  leído: la de servidor via POST real al mock (confirmado con un
+  contador de llamadas), la calculada via `localStorage`; ambas
+  sobreviven un F5; "Marcar todas" llama una sola vez al POST masivo,
+  marca las calculadas en `localStorage`, y el badge queda en 0; forzar
+  un 500 en el mock al marcar la de servidor confirma el rollback
+  (sigue sin leer, badge vuelve a 2). Sin errores de consola nuevos (los
+  únicos 404 son de `cuenta-corriente`/`pagos`, que pide `Home.jsx` para
+  `calcularAvisos()` — endpoints fuera del alcance de este mock, no una
+  regresión de esta tarea).
+- **Pendiente de probar contra el backend real, responsabilidad del
+  compañero que armó el pedido** (no se hizo en esta sesión para no
+  tocar datos reales sin que el usuario lo pida): disparar la cuota
+  vencida real de Clara (el UPDATE SQL mencionado en el pedido) y un
+  evento de prueba por Swagger, confirmar en `familia@demo.crear-academia.com`,
+  y después limpiar con `DELETE /api/v1/eventos/{id}` y el segundo UPDATE
+  que revierte la cuota.
+
+### Decisiones pendientes (nuevas)
+
+- **Migrar los 4 tipos calculados a `NotificacionService`** — pedido
+  explícito para el compañero de backend. Hoy asistencia/apto
+  físico/nota cargada/evento se calculan en el cliente porque el backend
+  no los tiene; si se agregan al service del lado del servidor se
+  elimina esta rama del todo y, de paso, se arregla la asimetría de
+  estado de lectura (calculadas = por dispositivo vía `localStorage`,
+  servidor = server-side de verdad) y la limitación ya documentada de
+  "nota cargada" (usa la fecha del examen, no el momento real de carga
+  de la nota — no existe ese dato todavía del lado del cliente, pero el
+  backend sí sabe cuándo se guardó la calificación).
+- **Texto de `CUOTA_VENCIDA` no calza con lo que la PWA puede hacer** —
+  el `cuerpo` real del backend dice *"Ya corre el recargo por mora.
+  Podés pagarla desde Pagos."* (verbatim, confirmado en
+  `notificacion_service.py`), pero el portal todavía no procesa pagos
+  online (ver recortes de alcance de Pagos más arriba) — "Podés pagarla
+  desde Pagos" promete algo que la pantalla de Pagos no ofrece hoy.
+  Flaguearlo al compañero antes de que alguien lo lea como un bug del
+  front.
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en

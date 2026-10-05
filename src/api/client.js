@@ -193,3 +193,19 @@ export async function descargarRecibo(alumnoId, pagoId) {
 export async function getEvaluaciones(alumnoId) {
   return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/evaluaciones`)
 }
+
+// NotificacionesResponse: { no_leidas, items: NotificacionResponse[] } — solo
+// CUOTA_NUEVA/CUOTA_VENCIDA/PAGO_RECIBIDO para el rol tutor, últimas 30.
+// no_leidas cuenta TODAS las pendientes, no solo las de items.
+export async function getNotificaciones() {
+  return fetchConToken(`${API_URL}/api/v1/notificaciones`)
+}
+
+// Ambas responden 204 sin cuerpo (ya cubierto por fetchConToken).
+export async function marcarNotificacionLeida(id) {
+  return fetchConToken(`${API_URL}/api/v1/notificaciones/${id}/leida`, { method: 'POST' })
+}
+
+export async function marcarTodasLeidas() {
+  return fetchConToken(`${API_URL}/api/v1/notificaciones/leidas`, { method: 'POST' })
+}
