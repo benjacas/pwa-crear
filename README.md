@@ -2,15 +2,36 @@
 
 Portal de autogestión para tutores/familias de la Escuela de Danzas CREAR: consultan clases, horarios, asistencia, cuotas, notas, eventos y avisos de sus hijas. Pensado mobile-first, instalable como PWA.
 
-Es el **frontend del rol Alumno/Tutor** únicamente — el sistema de administración (Dirección/Secretaría/Profesoras) vive en otro repo aparte. Los dos hablan con el mismo backend compartido: [`crear-backend`](#) (ver más abajo cómo levantarlo).
+Es el **frontend del rol Alumno/Tutor** únicamente: el sistema de administración (Dirección/Secretaría/Profesoras) vive en otro repo. Los dos hablan con el mismo backend compartido, `crear-backend`, que hay que tener corriendo para usar esta app. Cómo levantarlo: [`BACKEND_SETUP.md`](./BACKEND_SETUP.md).
 
 ## Stack
 
-React + Vite + Tailwind CSS + React Router. Sin librerías de estado externas — contexto de React alcanza para lo que necesita este proyecto.
+React + Vite + Tailwind CSS + React Router. Sin librerías de estado externas: con el contexto de React alcanza.
+
+## Requisitos previos
+
+| Herramienta | Para qué | Versión |
+|---|---|---|
+| Git | clonar el repo | cualquiera reciente |
+| Node.js | correr el front | 18 o más (LTS) |
+| Docker Desktop | levantar el backend (Postgres + API) | con Docker Compose v2 |
+
+Instalación: [Node.js LTS](https://nodejs.org), [Git](https://git-scm.com) y [Docker Desktop](https://www.docker.com/products/docker-desktop). En Windows, el instalador de Docker Desktop propone activar WSL 2: aceptalo.
+
+Comprobá que quedó todo (en cualquier sistema):
+
+```
+node -v
+npm -v
+git --version
+docker --version
+```
+
+**Terminal.** En Windows usá **PowerShell** (no `cmd`). Los comandos de este README son iguales en todos los sistemas, salvo donde hay dos bloques: uno `powershell` (Windows) y otro `bash` (Linux/Mac). Si preferís Git Bash en Windows, los bloques `bash` funcionan tal cual.
 
 ## 1. Clonar e instalar
 
-```bash
+```
 git clone <URL de este repo>
 cd <carpeta-del-repo>
 npm install
@@ -18,72 +39,132 @@ npm install
 
 ## 2. Configurar el `.env`
 
+Windows (PowerShell):
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Linux/Mac:
+
 ```bash
 cp .env.example .env
 ```
 
-Abrí `.env` y confirmá que `VITE_API_URL` apunte a donde esté corriendo el backend — en desarrollo local, normalmente:
+Abrilo (en Windows: `code .env` si tenés VS Code, o `notepad .env`) y confirmá que `VITE_API_URL` apunte al backend. En desarrollo local:
 
 ```
 VITE_API_URL=http://localhost:8000
 ```
 
-**El backend tiene que estar corriendo antes de probar la app** — sin él, el login no funciona (no hay ningún modo mock, todo lo que ves en pantalla viene de datos reales). Instrucciones completas en [`BACKEND_SETUP.md`](./BACKEND_SETUP.md).
+> En Windows, no crees el `.env` desde el Bloc de notas con "Guardar como": suele guardarlo como `.env.txt` y Vite no lo lee. Usá `Copy-Item` como arriba.
 
-## 3. Levantar el front
+## 3. Levantar el backend (obligatorio)
 
-```bash
+La app no tiene modo de prueba sin backend: el login y todo lo que se ve vienen de datos reales. Seguí [`BACKEND_SETUP.md`](./BACKEND_SETUP.md) y volvé acá cuando `http://localhost:8000/health` responda.
+
+## 4. Levantar el front
+
+```
 npm run dev
 ```
 
-Te va a mostrar una URL, normalmente `http://localhost:5173`.
+Vite muestra la URL, normalmente `http://localhost:5173`.
 
-## 4. Conseguir credenciales para entrar
+## 5. Conseguir credenciales para entrar
 
-Con el backend ya levantado (ver `BACKEND_SETUP.md`), la forma más rápida de tener datos de prueba reales es cargar la demo que ya trae `crear-backend`:
+Con el backend arriba, cargá los datos de prueba **desde la carpeta de `crear-backend`** (ahí está `docker-compose.dev.yml`; este repo no lo tiene):
 
-```bash
+```
 docker compose -f docker-compose.dev.yml exec backend python -m app.cli demo cargar
 ```
 
-Esto imprime, **una sola vez**, tres cuentas de prueba (secretaria, profesora, familia) con la misma contraseña — guardala apenas la veas, no se vuelve a mostrar. Entrá a la PWA con la cuenta de **familia** (rol `tutor`).
+Imprime, **una sola vez**, tres cuentas (secretaría, profesora y familia) con la misma contraseña. Guardala apenas la veas: no se vuelve a mostrar, y cada vez que se corre `demo cargar` se genera una nueva.
 
-Para borrar esos datos de prueba más adelante: `python -m app.cli demo borrar` (mismo comando, dentro del contenedor del backend).
+Para entrar a la PWA usá la cuenta de familia: `familia@demo.crear-academia.com`.
+
+Para borrar los datos de prueba: el mismo comando con `demo borrar` en lugar de `demo cargar`.
 
 ## Estructura del proyecto
 
 ```
 src/
-├── api/              # cliente HTTP — todas las llamadas al backend pasan por acá
+├── api/              # cliente HTTP: todas las llamadas al backend pasan por acá
 ├── components/
 │   ├── ui/             # piezas genéricas compartidas con el sistema de administración
-│   ├── layout/         # Shell, Header, BottomNav — el armazón del portal
-│   └── portal/         # piezas específicas de una pantalla (CalendarioMensual, modales, etc.)
+│   ├── layout/         # Shell, Header, BottomNav: el armazón del portal
+│   └── portal/         # piezas de una pantalla (CalendarioMensual, modales, etc.)
 ├── context/          # AuthContext (sesión), AlumnoActivoContext (qué hija se está viendo)
 ├── hooks/            # un hook por recurso (useCargos, useAsistencias, useEventos, etc.)
 ├── pages/            # una página por ruta
-├── routes/           # RequireRole — el guard de sesión/rol
-├── utils/            # format.js — toda la lógica de "cómo se muestra un dato" vive acá
-└── mock/             # fixtures.js — SOLO para lo que todavía no tiene endpoint real (ver abajo)
+├── routes/           # RequireRole: el guard de sesión/rol
+├── utils/            # format.js: toda la lógica de "cómo se muestra un dato"
+└── mock/             # fixtures.js: solo el flujo viejo de butacas y entradas (sin ruta ni enlace; queda como referencia de diseño)
 ```
 
 ## Qué está conectado a datos reales y qué no
 
 | Módulo | Estado |
 |---|---|
-| Login (con 2FA, passkeys y refresh automático) | ✅ Real |
-| Home, Pagos, Asistencia, Clases, Horarios (con feriados), Perfil, Evaluaciones | ✅ Real |
-| Avisos en Home, Notificaciones | ✅ Real (calculados en el front a partir de varios endpoints, no hay tabla de "notificaciones" en el backend) |
+| Login (con 2FA y renovación automática de sesión) | ✅ Real |
+| Home (avisos de cuota, asistencia y apto físico) | ✅ Real |
+| Pagos (cuotas pendientes, historial y recibos en PDF) | ✅ Real, solo lectura: todavía no se paga online |
+| Asistencia | ✅ Real |
+| Clases y Horarios (calendario con feriados) | ✅ Real |
+| Clases disponibles | ✅ Real: la familia pide un lugar y la secretaría lo confirma, inscribe y genera la cuota |
+| Evaluaciones | ✅ Real |
+| Perfil (edición de contacto y apto físico) | ✅ Real |
 | Eventos (cartelera y detalle) | ✅ Real, solo lectura |
-| Compra de entradas / butacas / vestuario de eventos | ⬜ Mockeado, sin conectar — módulo grande pendiente, no tiene ningún endpoint en el backend todavía |
-| "Clases disponibles" (inscribirse a una clase nueva) | ⬜ Mockeado — sin confirmar si el rol tutor puede autoinscribirse |
+| Vestuario (cuotas y pagos, desde Eventos) | ✅ Real, solo lectura: el pago online está pendiente |
+| Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
+| Entradas con butacas | ⬜ Pendiente: el backend ya tiene el módulo para el personal; faltan los endpoints de portal y el pago online |
+| Pago online (Mercado Pago) | ⬜ Pendiente: un único sistema de cobro para cuotas, vestuario, matrícula y entradas |
 
 ## Convenciones a respetar
 
-- **Nunca `fecha.toISOString()` para fechas locales** — corre el día en zonas UTC+ (como Argentina). Usar `hoyLocalISO()` de `utils/format.js`. Hay una regla de ESLint que bloquea esto (`npm run lint`).
-- **Las mutaciones (crear/editar) nunca caen a un mock si fallan** — si algo no tiene endpoint real, se muestra un error claro o el elemento directamente no aparece. Nunca se simula un éxito.
-- Antes de modificar `components/ui/` — es compartido con el sistema de administración, avisar al equipo del otro repo.
+- **Nunca `fecha.toISOString()` para fechas locales:** corre el día en zonas UTC+ (como Argentina). Usar `hoyLocalISO()` de `utils/format.js`. Hay una regla de ESLint que lo bloquea (`npm run lint`).
+- **Las mutaciones (crear/editar) nunca caen a un mock si fallan:** si algo no tiene endpoint real, se muestra un error claro o el elemento directamente no aparece. Nunca se simula un éxito.
+- Antes de modificar `components/ui/`, avisar al equipo del otro repo: es compartido con el sistema de administración.
 
-## PWA
+## PWA (instalarla)
 
-El proyecto ya es instalable (manifest + service worker vía `vite-plugin-pwa`). Para probarlo: `npm run build && npm run preview`, abrir en Chrome/Edge y confirmar el ícono de instalar en la barra de direcciones.
+El proyecto ya es instalable (manifest + service worker con `vite-plugin-pwa`). Para probarlo hay que compilar y servir la versión de producción:
+
+```
+npm run build
+npm run preview
+```
+
+(Dos comandos separados: el `&&` no existe en Windows PowerShell 5.1.)
+
+Abrilo en Chrome o Edge y buscá el ícono de instalar en la barra de direcciones.
+
+**Probarlo desde el celular** (misma red Wi-Fi que la compu):
+
+```
+npm run preview -- --host
+```
+
+Vite imprime una dirección tipo `http://192.168.x.x:4173`; abrila desde el navegador del teléfono. Si no la ves, averiguá la IP de la compu con `ipconfig` (Windows) o `hostname -I` (Linux). La primera vez, Windows pregunta si permitís Node.js en redes privadas: aceptá. Ojo con que el backend solo acepta pedidos desde los orígenes de su lista `BACKEND_CORS_ORIGINS` (en `crear-backend/backend/.env`): para que el login ande desde la IP del celular hay que sumarla ahí.
+
+## Problemas frecuentes
+
+**Windows**
+
+- **`npm : No se puede cargar el archivo ... npm.ps1 porque la ejecución de scripts está deshabilitada`.** PowerShell bloquea scripts por defecto. Se arregla una sola vez:
+  ```powershell
+  Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+  ```
+  Cerrá y reabrí la terminal.
+- **`'npm' no se reconoce como un comando`.** Cerrá y reabrí la terminal después de instalar Node.js; si sigue, reinstalalo marcando la opción de agregarlo al PATH.
+- **`&&` no funciona.** Windows PowerShell 5.1 no lo soporta: escribí cada comando en su propia línea (o instalá PowerShell 7).
+- **El login falla con "blocked by CORS policy" y la app corre en el puerto 5174.** Vite sube al puerto siguiente si el 5173 está ocupado, y el backend solo permite el 5173. Cerrá la otra instancia. Para ver qué usa el puerto:
+  ```powershell
+  netstat -ano | findstr :5173
+  tasklist /FI "PID eq <numero-de-la-ultima-columna>"
+  ```
+
+**Cualquier sistema**
+
+- **"Error 401" o "Usuario o contraseña incorrectos".** La contraseña de la demo cambia cada vez que se corre `demo cargar`. Tras 5 intentos fallidos el backend bloquea el login unos minutos (error 429): esperá en vez de seguir probando.
+- **Pantalla de error al entrar a Eventos o a Notificaciones.** Casi siempre es que el backend no está arriba o quedó con una migración pendiente: ver [`BACKEND_SETUP.md`](./BACKEND_SETUP.md), sección "Problemas frecuentes".

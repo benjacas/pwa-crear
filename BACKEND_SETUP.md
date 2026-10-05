@@ -1,114 +1,190 @@
-# Levantar `crear-backend` en local
+Levantar crear-backend en local
 
-Este frontend necesita el backend compartido corriendo para hacer cualquier cosa (no hay modo mock de login). El backend vive en su propio repo: `crear-backend`.
+Esta app necesita el backend compartido corriendo: no hay modo de prueba sin él. El backend vive en su propio repo, crear-backend.
 
-## Opción recomendada: Docker Compose
+Los comandos son iguales en todos los sistemas salvo donde hay dos bloques: uno powershell (Windows) y otro bash (Linux/Mac). Si usás Git Bash en Windows, los bloques bash funcionan, salvo la activación del entorno virtual (source .venv/Scripts/activate).
 
-El repo de `crear-backend` ya incluye un `docker-compose.dev.yml` pensado para esto — un solo comando levanta Postgres + la API con recarga automática.
+Requisitos previos
+Git.
+Docker Desktop, abierto y con el motor en marcha antes de correr cualquier comando docker. En Windows, el instalador propone activar WSL 2: aceptalo. En Linux alcanza con Docker Engine más el plugin de Compose.
+Terminal: en Windows, PowerShell (no cmd).
+Python 3.12, solo si vas a usar la alternativa sin Docker de más abajo (el contenedor usa 3.12). En Windows, instalalo desde python.org marcando "Add python.exe to PATH".
+Opción recomendada: Docker Compose
 
-```bash
+crear-backend incluye docker-compose.dev.yml: un solo comando levanta Postgres y la API.
+
+1. Clonar y entrar a la carpeta
+
 git clone <URL de crear-backend>
 cd crear-backend
+
+2. Crear el archivo de configuración
+
+Windows (PowerShell):
+
+powershell
+Copy-Item backend\.env.example backend\.env
+
+(En Windows también podés correr setup.cmd desde la raíz del repo: crea backend\.env si no existe.)
+
+Linux/Mac:
+
+bash
 cp backend/.env.example backend/.env
+
+No hace falta editarlo para este camino: el compose le pasa al contenedor la conexión a su propia base.
+
+3. Levantar
+
 docker compose -f docker-compose.dev.yml up -d
+
+La primera vez construye la imagen y tarda unos minutos. Las migraciones se aplican solas al arrancar. Si querés correrlas a mano:
+
 docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
-```
 
-Confirmá que levantó bien:
+4. Comprobar que responde
 
-```bash
+Windows (PowerShell):
+
+powershell
+curl.exe http://localhost:8000/health
+
+(Sin el .exe, curl en Windows PowerShell 5.1 es un alias de otro comando y muestra un objeto en vez de la respuesta. Otra opción: Invoke-RestMethod http://localhost:8000/health.)
+
+Linux/Mac:
+
+bash
 curl http://localhost:8000/health
-```
 
-### Cargar datos de prueba
+Tiene que devolver {"status":"ok"}.
 
-La forma más rápida — un comando que carga docentes, comisiones, alumnas, cuotas, asistencia y tres usuarios de prueba (secretaria/profesora/familia) de una sola vez:
+5. Cargar datos de prueba
 
-```bash
 docker compose -f docker-compose.dev.yml exec backend python -m app.cli demo cargar
-```
 
-**Guardá la contraseña que te muestra — aparece una sola vez.** Para volver a dejar la base limpia: `python -m app.cli demo borrar` (mismo comando, cambiando `cargar` por `borrar`).
+Carga docentes, comisiones, alumnas, cuotas, asistencia y tres usuarios (secretaría, profesora y familia). Guardá la contraseña que muestra: aparece una sola vez y cambia cada vez que se corre. Otros comandos útiles:
 
-### Documentación interactiva de la API
+docker compose -f docker-compose.dev.yml exec backend python -m app.cli demo estado
+docker compose -f docker-compose.dev.yml exec backend python -m app.cli demo borrar
+docker compose -f docker-compose.dev.yml exec backend python -m app.cli listar
 
-```
-http://localhost:8000/api/v1/openapi.json   (el esquema completo, no en la raíz)
-http://localhost:8000/docs                   (Swagger UI — recomendado para probar endpoints a mano)
-```
+Parar y volver a empezar
 
-Swagger es mucho más cómodo que armar `curl` a mano: tenés un botón **"Authorize"** arriba a la derecha — logueate desde `POST /auth/login`, copiá el `access_token`, pegalo ahí, y de ahí en más todos los endpoints que pruebes en esa pestaña ya van autenticados.
+docker compose -f docker-compose.dev.yml stop        # frena, conserva los datos
+docker compose -f docker-compose.dev.yml down        # borra los contenedores, conserva los datos
+docker compose -f docker-compose.dev.yml down -v     # borra TODO, incluida la base de prueba
+Documentación interactiva de la API
+http://localhost:8000/docs                    Swagger UI (la forma más cómoda de probar endpoints)
+http://localhost:8000/api/v1/openapi.json     el esquema completo (no está en la raíz)
 
-## Alternativa: backend suelto con `.venv` (sin Docker)
+Cómo usar Swagger sin pelearse con él:
 
-Hace falta para correr `pytest` directo, o si Docker da problemas:
+Autenticarse: POST /auth/login → copiá el access_token → botón Authorize → pegalo. El token dura 15 minutos: cuando venza, repetí el login.
+Cambiar de usuario: primero Authorize → Logout, y recién después pegá el token nuevo. Si no, sigue valiendo el anterior aunque parezca que cargaste el otro (síntoma típico: 403 con un usuario que debería poder).
+Cuerpos de ejemplo: Swagger rellena todos los campos con valores falsos ("string", el UUID 3fa85f64-..., "gala"). Borrá el cuadro y mandá solo los campos necesarios, o vas a obtener errores raros o crear datos basura.
+Un solo clic por acción: apretar Execute dos veces repite el POST (dio un 409 de "inscripción duplicada" más de una vez).
+Alternativa: backend suelto con .venv (sin Docker)
 
-```bash
+Hace falta para correr pytest directo. Para la consola app.cli conviene usar el contenedor: con el entorno virtual, app.cli usa el DATABASE_URL del .env, que por defecto apunta a otra base y falla con InvalidPasswordError.
+
+Crear el entorno e instalar dependencias
+
+Windows (PowerShell):
+
+powershell
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+Si la activación falla con "la ejecución de scripts está deshabilitada":
+
+powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+
+Reabrí la terminal y repetí la activación.
+
+Linux/Mac:
+
+bash
 cd backend
 python3 -m venv .venv
-source .venv/bin/activate   # Linux/Mac
-# .\.venv\Scripts\Activate.ps1   # Windows PowerShell
+source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-Editá `backend/.env` → `DATABASE_URL` apuntando al Postgres del compose (ver más abajo qué puerto usa) o a un Postgres propio.
+Base de datos. Levantá solo Postgres con Docker (desde la raíz del repo) y apuntá el .env a esa base:
 
-```bash
+docker compose -f docker-compose.dev.yml up -d db
+docker compose -f docker-compose.dev.yml stop backend
+
+En backend/.env:
+
+DATABASE_URL="postgresql+asyncpg://crear:crear@localhost:5434/crear_db"
+
+El stop backend evita que el contenedor y tu uvicorn se pisen en el puerto 8000. Después, con el entorno activado y parada en backend/:
+
 alembic upgrade head
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+Correr los tests
 
-## Problemas reales que ya aparecieron (y cómo se resolvieron)
+La variable DATABASE_URL se pasa distinto según la terminal. Con el entorno virtual activado y parada en backend/:
 
-**`permission denied` al correr cualquier comando `docker`**
-Tu usuario de Linux no está en el grupo `docker`. Arreglo definitivo:
-```bash
-sudo usermod -aG docker $USER
-```
-No alcanza con abrir una terminal nueva — hay que **cerrar sesión del sistema completo y volver a entrar** (o reiniciar) para que el cambio de grupo se aplique.
+Windows (PowerShell):
 
-**Nunca uses `sudo docker ...` como solución rápida** — si el contenedor escribe algo de vuelta a una carpeta montada por volumen, queda con dueño `root`, y tu usuario normal no puede tocarlo después. Si ya pasó: `sudo chown -R $USER:$USER .` en la carpeta del repo.
+powershell
+$env:DATABASE_URL = "postgresql+asyncpg://crear:crear@localhost:5434/crear_db"
+pytest tests/test_portal_familias.py tests/test_permisos.py
 
-**`InvalidPasswordError: password authentication failed for user "crear"`**
-Casi siempre es un volumen de Postgres viejo con otra contraseña ya grabada adentro (Postgres solo aplica usuario/contraseña la primera vez que inicializa una base vacía). Arreglo:
-```bash
-docker compose -f docker-compose.dev.yml down -v
-docker compose -f docker-compose.dev.yml up -d
-docker compose -f docker-compose.dev.yml exec backend alembic upgrade head
-```
-Esto borra los datos de prueba — recargalos con `python -m app.cli demo cargar`.
+(La variable queda definida mientras la terminal esté abierta. Para borrarla: Remove-Item Env:DATABASE_URL. En cmd sería set DATABASE_URL=... sin comillas.)
 
-**Puerto de Postgres ocupado al hacer `up`**
-Puede haber otro Postgres corriendo en tu máquina (del sistema operativo, o de otro proyecto). El `docker-compose.dev.yml` de este proyecto publica Postgres en el **5434** — si por algún motivo ese también choca, cambiá el mapeo de puerto en el archivo (`"5434:5432"` → otro número) y ajustá `DATABASE_URL` igual.
+Linux/Mac:
 
-**`ModuleNotFoundError` después de traer cambios nuevos (`git pull`)**
-El contenedor de Docker quedó con una imagen vieja, construida antes de que se agregara una dependencia nueva a `requirements.txt`. Reconstruí la imagen:
-```bash
-docker compose -f docker-compose.dev.yml build backend
-docker compose -f docker-compose.dev.yml up -d
-```
+bash
+DATABASE_URL="postgresql+asyncpg://crear:crear@localhost:5434/crear_db" .venv/bin/pytest tests/test_portal_familias.py tests/test_permisos.py
 
-**`Can't locate revision identified by '...'` al correr `alembic upgrade head`**
-Pasa si alguien reordenó/renumeró migraciones en el repo compartido mientras tu base local ya tenía aplicada la versión vieja. En desarrollo, con datos solo de prueba, lo más simple es recrear la base desde cero (ver el arreglo de `InvalidPasswordError` arriba).
+Notas:
 
-**Login da 403 en todo salvo `/auth/me`**
-Es esperado: toda cuenta nueva arranca con clave provisoria y `debe_cambiar_clave=true`. Primer paso obligatorio: `POST /auth/cambiar-clave`.
+La suite completa tarda varios minutos: casi siempre alcanza con los archivos del módulo que tocaste.
+Corré los tests desde el entorno virtual, no dentro del contenedor: ahí fallan algunos por razones de entorno (el contenedor no trae git y hereda variables del .env).
+test_respaldo necesita las herramientas cliente de PostgreSQL (pg_restore). Si no las tenés, o son de una versión anterior a la del servidor, falla por eso y no por el código.
+Mirar los datos sin pasar por la API
 
-**Crear un usuario de prueba con `app.cli crear` falla con "no es un correo válido"**
-No uses dominios como `.test` o `.local` — la validación de email hace una consulta DNS real, y esos dominios están reservados para nunca resolver. Usá `@example.com` (es un dominio real reservado para documentación, nunca entrega mail, pero sí pasa la validación).
+DBeaver (gratis) conectado a:
 
-**El `access_token` deja de funcionar a los pocos minutos**
-Dura 15 minutos a propósito (seguridad). Si estás probando a mano con `curl`, regenerá el token justo antes de cada tanda de comandos en vez de reusar uno viejo. En Swagger, simplemente repetís el login y volvés a tocar "Authorize".
+Host: localhost
+Puerto: 5434
+Base: crear_db
+Usuario / contraseña: crear / crear
 
-**Crear una cuenta nueva pide contraseña y la rechaza**
-Reglas reales: mínimo 10 caracteres, no puede contener la parte del email antes de la `@`, no puede ser trivial, tiene que ser distinta de la actual.
+Sirve para confirmar IDs o forzar un dato puntual y probar un caso límite (por ejemplo, una cuota vencida). Hacelo siempre sobre la base de desarrollo, nunca en producción.
 
-## Para mirar los datos directo (sin pasar por la API)
-
-[DBeaver](https://dbeaver.io/) (gratis) conectado a:
-- Host: `localhost`
-- Puerto: `5434`
-- Base: `crear_db`
-- Usuario / contraseña: `crear` / `crear`
-
-Útil para confirmar IDs, revisar qué hay cargado, o forzar un dato puntual para probar un caso límite (ej. una cuota vencida) — siempre sobre la base de desarrollo, nunca en producción.
+Problemas frecuentes
+Solo Windows
+error during connect ... docker_engine / "Cannot connect to the Docker daemon". Docker Desktop no está abierto. Abrilo y esperá a que diga que el motor está en marcha.
+Docker Desktop se queja de WSL 2 o de virtualización. Abrí PowerShell como administrador, corré wsl --install y reiniciá. Si sigue, la virtualización puede estar desactivada en la BIOS.
+permission denied con Docker usando otro usuario de Windows. El instalador agrega al grupo docker-users solo al usuario que instala. Agregá el otro desde "Administración de equipos → Usuarios y grupos locales → Grupos → docker-users" y cerrá sesión.
+ports are not available: ... forbidden by its access permissions. Windows reserva rangos de puertos. Revisalos con netsh interface ipv4 show excludedportrange protocol=tcp y, si el 8000 o el 5434 caen adentro, cambiá el puerto publicado en docker-compose.dev.yml.
+Puerto ocupado (8000, 5434 o 5173).
+powershell
+  netstat -ano | findstr :8000
+  tasklist /FI "PID eq <numero-de-la-ultima-columna>"
+Editaste código del backend y el contenedor no recarga. A veces los cambios de archivos no llegan al contenedor desde una carpeta de Windows. Reinicialo con docker compose -f docker-compose.dev.yml restart backend después de editar.
+&& no funciona. Windows PowerShell 5.1 no lo soporta: un comando por línea.
+Solo Linux
+permission denied while trying to connect to the docker API. Tu usuario no está en el grupo docker: sudo usermod -aG docker $USER, y después cerrá sesión completa y volvé a entrar (una terminal nueva no alcanza).
+No uses sudo docker ... como atajo permanente: lo que el contenedor escribe en carpetas montadas queda con dueño root. Si ya pasó: sudo chown -R $USER:$USER . en la carpeta del repo.
+Cualquier sistema
+InvalidPasswordError: password authentication failed for user "crear". Postgres solo toma usuario y contraseña la primera vez que inicializa una base vacía; probablemente quedó un volumen viejo. Esto borra los datos de prueba (se recargan con demo cargar):
+  docker compose -f docker-compose.dev.yml down -v
+  docker compose -f docker-compose.dev.yml up -d
+Puerto de Postgres ocupado. El compose publica Postgres en el 5434 (el 5432 suele estar tomado por otro Postgres). Si el 5434 también choca, cambiá el número en docker-compose.dev.yml y en el DATABASE_URL.
+ModuleNotFoundError después de un git pull. Se agregó una dependencia y la imagen quedó vieja. Reconstruila:
+  docker compose -f docker-compose.dev.yml build backend
+  docker compose -f docker-compose.dev.yml up -d
+Multiple head revisions are present o Can't locate revision al migrar. Dos migraciones quedaron con el mismo padre, o se renumeraron. Mirá alembic heads; en desarrollo, con datos de prueba, lo más simple es recrear la base (down -v, up -d). Si pasa en main, avisá: hay que unir las cabezas con una migración de merge.
+El front de la PWA falla con "blocked by CORS policy" en una ruta puntual. Si las demás andan, casi seguro esa ruta devolvió un 500: el navegador lo muestra como CORS porque la respuesta de error sale sin las cabeceras. Mirá el log real: docker compose -f docker-compose.dev.yml logs backend --since 5m.
+Todo da 403 salvo /auth/me. La cuenta tiene la clave provisoria: hay que cambiarla primero con POST /auth/cambiar-clave.
+/portal/* da 403. Esas rutas son solo para el rol tutor. El personal (secretaría, dirección) recibe 403 a propósito.
+"Usuario o contraseña incorrectos" o error 429. Tras 5 intentos fallidos el login se bloquea unos minutos, y mientras dura ni la clave correcta entra. Esperá en vez de seguir probando.
+Crear un usuario con app.cli crear falla con "no es un correo válido". No uses dominios .test ni .local: la validación consulta el DNS y esos dominios no existen. Usá @example.com.
+Reglas de contraseña: mínimo 10 caracteres, sin la parte del correo antes de la @, ni triviales, y distinta de la actual.
