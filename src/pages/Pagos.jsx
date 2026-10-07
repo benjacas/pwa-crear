@@ -58,8 +58,9 @@ export default function Pagos() {
 
       const cuotaConSaldo = cc?.cuotas_pendientes?.find((c) => c.id === cuotaId)
       if (cuotaConSaldo && Number(cuotaConSaldo.saldo_pendiente) > 0) {
+        const porMora = Number(cuotaConSaldo.recargo_mora) > 0 ? ' por recargo por mora' : ''
         toast(
-          `Recibimos tu pago de ${formatMoneda(ordenPagada.monto)}. Quedó un saldo de ${formatMoneda(cuotaConSaldo.saldo_pendiente)} por recargo por mora.`,
+          `Recibimos tu pago de ${formatMoneda(ordenPagada.monto)}. Quedó un saldo de ${formatMoneda(cuotaConSaldo.saldo_pendiente)}${porMora}.`,
           'info',
         )
       } else {
