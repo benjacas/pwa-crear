@@ -59,6 +59,12 @@ export function AuthProvider({ children }) {
     // Estado de lectura de las notificaciones calculadas localmente (ver
     // useNotificaciones.js) — es por usuario, no debe sobrevivir a un logout.
     localStorage.removeItem('crear_notifs_leidas')
+    // Órdenes de pago pendientes (ver usePagoOnline.js): la clave lleva el id
+    // de la alumna (`crear_orden_pendiente:<alumnoId>`), así que la lista fija
+    // de arriba no alcanza — hay que recorrer localStorage para encontrarlas.
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('crear_orden_pendiente:'))
+      .forEach((k) => localStorage.removeItem(k))
     setAccessToken(null); setRefreshToken(null); setRol(null); setNombre(null); setDebeCambiarClave(false)
   }
 

@@ -178,6 +178,24 @@ export async function actualizarMiPerfil(datos) {
   })
 }
 
+// OrdenPagoDeLaFamilia: { id, estado, monto, importe, recargo, checkout_url }.
+// estado: CREADA (checkout_url con valor) | PAGADA | CONFLICTO (acreditado
+// por Mercado Pago pero no imputado — requiere revisión manual de la
+// academia). Reutiliza la orden activa si ya existía una para esta cuota
+// (confirmado en cobro_electronico_service.crear_enlace_de: devuelve la
+// existente en vez de crear otra) — llamar esto dos veces no duplica nada.
+export async function crearOrdenPagoCuota(alumnoId, cuotaId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/cuotas/${cuotaId}/orden-pago`, {
+    method: 'POST',
+  })
+}
+
+// Si la orden sigue CREADA, el backend le pregunta a Mercado Pago antes de
+// contestar (no hace falta esperar al webhook) — ver portal_service.orden_pago.
+export async function getOrdenPago(alumnoId, ordenId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/ordenes-pago/${ordenId}`)
+}
+
 export async function descargarRecibo(alumnoId, pagoId) {
   const token = localStorage.getItem('crear_access')
   const res = await fetch(`${API_URL}/api/v1/portal/hijas/${alumnoId}/pagos/${pagoId}/recibo.pdf`, {

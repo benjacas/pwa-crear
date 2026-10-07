@@ -27,6 +27,15 @@ export function hoyLocalISO() {
   return new Date(ahora.getTime() - offsetMs).toISOString().slice(0, 10)
 }
 
+// Días de calendario entre hoy (local) y `fechaISO` ('YYYY-MM-DD'): negativo
+// si ya pasó. Ambas fechas a medianoche local, nada de horas — evita que un
+// resto de milisegundos corra el redondeo un día para cualquier lado.
+export function diasHasta(fechaISO) {
+  const hoy = new Date(`${hoyLocalISO()}T00:00:00`)
+  const fecha = new Date(`${fechaISO}T00:00:00`)
+  return Math.round((fecha - hoy) / 86400000)
+}
+
 // Estados reales de CuotaResponse (ver database/migrations/005_modulo_cobros.sql):
 // PENDIENTE, EN_MORA, PAGO_PARCIAL, PAGADA, CONDONADA — /cuenta-corriente
 // solo devuelve las tres primeras (las cerradas no vienen en cuotas_pendientes).

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { AlumnoActivoContext } from '../context/AlumnoActivoContext'
 import {
   getAsistenciaHija, getEvaluaciones, getEventos,
@@ -32,12 +32,10 @@ export function useNotificaciones() {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    setCargando(true)
-    setError(null)
-    // seguro() por sub-fetch (no solo un Promise.allSettled afuera): así, si
-    // falla una sola fuente (p.ej. getEventos), las otras dos igual arman
-    // notificaciones calculadas en vez de perder el bloque entero.
+  // seguro() por sub-fetch (no solo un Promise.allSettled afuera): así, si
+  // falla una sola fuente (p.ej. getEventos), las otras dos igual arman
+  // notificaciones calculadas en vez de perder el bloque entero.
+  const cargarTodo = useCallback(() => {
     const seguro = (promesa, vacio) => promesa.catch((e) => { console.warn('Notificaciones: una fuente falló', e); return vacio })
     const calculo = Promise.all([
       Promise.all(alumnosVinculados.map((h) => seguro(getAsistenciaHija(h.alumno_id), null).then((r) => [h.alumno_id, r]))),
@@ -50,7 +48,7 @@ export function useNotificaciones() {
       eventos,
     }))
 
-    Promise.allSettled([getNotificaciones(), calculo]).then(([resServidor, resCalculadas]) => {
+    return Promise.allSettled([getNotificaciones(), calculo]).then(([resServidor, resCalculadas]) => {
       if (resServidor.status === 'fulfilled') {
         setDelServidor(resServidor.value.items)
         setNoLeidasServidor(resServidor.value.no_leidas)
@@ -60,8 +58,14 @@ export function useNotificaciones() {
       }
       const fallida = [resServidor, resCalculadas].find((r) => r.status === 'rejected')
       setError(fallida?.reason ?? null)
-    }).finally(() => setCargando(false))
+    })
   }, [alumnosVinculados])
+
+  useEffect(() => {
+    setCargando(true)
+    setError(null)
+    cargarTodo().finally(() => setCargando(false))
+  }, [cargarTodo])
 
   const notifs = useMemo(() => {
     const servidor = delServidor.map((n) => ({
@@ -128,5 +132,8 @@ export function useNotificaciones() {
     }
   }
 
-  return { notifs, noLeidas, cargando, error, marcarLeida, marcarTodas }
+  // Sin tocar `cargando`: la usa el pago online para que la campana se
+  // actualice sola apenas se acredita una cuota, sin tapar la pantalla con
+  // el Skeleton de la carga inicial.
+  return { notifs, noLeidas, cargando, error, marcarLeida, marcarTodas, recargar: cargarTodo }
 }
