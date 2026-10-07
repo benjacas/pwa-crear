@@ -3033,13 +3033,214 @@ cliente — el backend no los tiene todavía.
   de la nota — no existe ese dato todavía del lado del cliente, pero el
   backend sí sabe cuándo se guardó la calificación).
 - **Texto de `CUOTA_VENCIDA` no calza con lo que la PWA puede hacer** —
-  el `cuerpo` real del backend dice *"Ya corre el recargo por mora.
-  Podés pagarla desde Pagos."* (verbatim, confirmado en
-  `notificacion_service.py`), pero el portal todavía no procesa pagos
-  online (ver recortes de alcance de Pagos más arriba) — "Podés pagarla
-  desde Pagos" promete algo que la pantalla de Pagos no ofrece hoy.
-  Flaguearlo al compañero antes de que alguien lo lea como un bug del
-  front.
+  **resuelto en la Tarea O**: el `cuerpo` real del backend dice *"Ya
+  corre el recargo por mora. Podés pagarla desde Pagos."* (verbatim,
+  confirmado en `notificacion_service.py`) y, desde la Tarea O, Pagos
+  sí ofrece pagar la cuota online — el texto ya no promete algo que la
+  pantalla no hace. Se deja la entrada tal cual para que quede el
+  rastro de por qué existía el desajuste.
+
+## Tarea O — Pago online de cuotas (PR 2b): el botón "Pagar"
+
+**Spec**: PR 2b del plan de `claude.ai` — conectar el botón "Pagar" de
+Pagos.jsx (hasta acá `disabled`, con el tooltip "Integración de pago
+pendiente") al backend real de `feat/pago-cuotas-portal` (branch
+aparte de `crear-backend`, con los endpoints de orden de pago de
+cuotas — no existen en `main` del backend todavía). Alcance: solo
+cuotas. Vestuario y matrícula quedan afuera a propósito (tienen su
+propio pago online pendiente, no es parte de este PR).
+
+- **Paso 0 (leer antes de escribir)**: estados reales de `OrdenPago`
+  (`backend/app/models/cobros.py`, `cobro_electronico_service.py`):
+  `CREADA` (default, con `checkout_url`), `PAGADA`, `CONFLICTO`.
+  `CONFLICTO` sale cuando Mercado Pago aprueba un pago pero la cuota ya
+  estaba cerrada por otra vía (o el saldo bajó) — `imputado > debe` o
+  `lectura.cerrado` — y queda para devolución manual de la academia
+  (nunca se pisa nada ni se le "regala" el saldo a otra cuota). El GET
+  `/portal/hijas/{id}/ordenes-pago/{id}` (`portal_service.orden_pago`)
+  no es un GET tonto: si la orden sigue `CREADA` y tiene `mp_order_id`,
+  le pregunta a Mercado Pago antes de contestar (mismo código que
+  correría un webhook) — por eso alcanza con pollear este endpoint,
+  sin túnel ni firma de webhook, tal como pedía el spec.
+- `api/client.js`: `crearOrdenPagoCuota(alumnoId, cuotaId)` (POST, sin
+  body — el email sale del perfil del lado del backend, no se manda
+  acá) y `getOrdenPago(alumnoId, ordenId)` (GET). Ambas via
+  `fetchConToken`, nada nuevo ahí. El shape de `OrdenPagoDeLaFamilia`
+  es `{ id, estado, monto, importe, recargo, checkout_url }` — ojo que
+  es `importe`, no `importe_cuota` (ese nombre es solo interno,
+  `schemas/portal.py` lo expone distinto).
+- `hooks/usePagoOnline.js` (nuevo): fases `idle | creando | resumen |
+  esperando | pagado | sin_confirmar | conflicto | error`. Decisiones
+  no obvias:
+  - **Un solo flujo por alumna, no por cuota**: la clave de
+    localStorage es `crear_orden_pendiente:<alumnoId>` (como pide el
+    spec), así que si la familia arranca un pago para una cuota y
+    después otro para otra, se pierde el rastro de la primera — alcance
+    aceptado tal cual lo pide el spec, no es un bug.
+  - **"Pagar" y "Retomar pago" llaman a la misma función**
+    (`abrirPago`, que hace el POST): el backend ya es idempotente
+    (`CobroElectronicoService.crear_enlace_de` devuelve la orden activa
+    existente en vez de crear otra — confirmado con dos POST seguidos
+    contra el backend real, mismo `id` de orden ambas veces), así que
+    no hace falta un camino GET separado para "retomar". El label del
+    botón (`cuotaPendienteId === cuota.id`) solo se actualiza si el
+    POST salió bien — si `abrirPago` falla (409/422/502/503) el botón
+    se queda diciendo "Pagar", no "Retomar pago" (bug que apareció y se
+    corrigió en esta misma tarea: `cuotaId` se seteaba antes del
+    `try`, no después del éxito).
+  - **El polling es un `setInterval` de 5s con límite de 2 minutos**
+    (`inicioRef`, se reinicia cada vez que arranca una espera nueva, no
+    se persiste el tiempo transcurrido entre recargas de página — al
+    reabrir Pagos con una orden pendiente se hace UNA consulta y, si
+    sigue `CREADA`, se arranca una ventana de 2 minutos nueva, no la
+    que quedaba).
+  - **`visibilitychange`**: mientras `fase === 'esperando'`, al volver
+    a la pestaña se dispara una consulta inmediata (típico volver de
+    Mercado Pago desde el celular). Se resuscribe cada vez que cambia
+    `orden` (barato, sin problema).
+  - **Nunca se marca nada como pagado por una URL de retorno** — no
+    hay ninguna (regla explícita del spec): todo pasa por la respuesta
+    del GET, nunca por query params ni por el storage del tab que abrió
+    Mercado Pago.
+  - El `<a href={orden.checkout_url}>` no tiene `preventDefault` ni
+    `window.open` — el `onClick` (`confirmarSalida`) solo arranca el
+    polling, la navegación sigue su curso normal. Confirmado con
+    Playwright que al clickear se abre una pestaña nueva de verdad
+    (evento `popup`) con la URL real de Mercado Pago y la pestaña
+    original pasa a "esperando" sin que nada la bloquee.
+- `hooks/useCargos.js`: `recargar()` ahora devuelve los datos frescos
+  (no solo actualiza el estado) — el flujo de pago necesita leer el
+  pago recién acreditado en el mismo tick en que se resuelve, no en el
+  próximo render.
+- `hooks/useNotificaciones.js`: se extrajo la carga a `cargarTodo` (ya
+  estaba toda en el `useEffect`) y se expone como `recargar()` — sin
+  tocar `cargando`, para que la campana se actualice sola al acreditarse
+  un pago sin tapar la pantalla con el Skeleton de la carga inicial.
+- `Pagos.jsx`: pasó de mostrar un solo "próximo cargo pendiente" a una
+  tarjeta por cada cuota de `cuotas_pendientes` (pedido explícito del
+  spec: "un botón Pagar en cada cuota pendiente", no en la más
+  próxima nada más). La hoja de confirmación/estado es un único
+  `Modal` cuyo contenido cambia según `fase` — nada de `window.open`
+  en el botón principal, es un `<a target="_blank">` con las clases de
+  `Button` copiadas a mano (`Button.jsx` solo sabe renderizar
+  `<button>`, no soporta polimorfismo). Maneja los errores del spec:
+  409 → toast + recarga silenciosa de la lista + cierra la hoja (no
+  hay nada que explicarle a la familia, la cuota ya estaba saldada);
+  422 (`ERR_EMAIL_REQUERIDO`) → mensaje del backend + link a Perfil;
+  502/503 → mensaje del backend tal cual, sin intentar mejorarlo.
+  **Bug encontrado y corregido durante la prueba manual**: la fase
+  `'pagado'` no tiene ninguna vista propia en el Modal (se resuelve con
+  un efecto que recarga, muestra el toast y abre `ComprobanteModal`),
+  pero al principio nada cerraba la hoja de `usePagoOnline` — quedaba
+  una hoja "Pagar cuota" vacía apilada atrás del comprobante. Se arregló
+  moviendo la lógica de "pagado" (y la de 409) a dos `useEffect` en
+  `Pagos.jsx` que, además de recargar/tostar, llaman a `cerrarHoja()`.
+- `AuthContext.jsx`: `logout()` ahora también recorre
+  `Object.keys(localStorage)` buscando el prefijo
+  `crear_orden_pendiente:` — la lista fija de claves que ya borraba no
+  alcanza porque esta clave lleva el id de la alumna adentro.
+- **Probado contra el backend real** (`crear-backend` en
+  `feat/pago-cuotas-portal`, Docker Compose local, con el
+  `MP_ACCESS_TOKEN` de prueba que ya estaba en `backend/.env`) con
+  Playwright headless (`chromium-cli` no está instalado en este
+  entorno; se usó `playwright` directo vía `npx`, mismo patrón) contra
+  `familia@demo.crear-academia.com`:
+  - Crear la orden, ver el desglose (sin fila de recargo porque
+    `recargo_mercadopago_pct` está en 0 en la config de esta base),
+    tocar "Ir a Mercado Pago": se abre una pestaña nueva con la URL
+    real de Mercado Pago (confirmado que es la misma orden que un POST
+    repetido por `curl` — reutilización confirmada de punta a punta,
+    no solo a nivel de API).
+  - Recargar la página en plena espera (simula cerrar/reabrir la PWA):
+    reanuda la fase `esperando` sin perder la orden.
+  - Flujo "pagado" y flujo "conflicto": **no se pudo completar un pago
+    real en el checkout de Mercado Pago desde este entorno** (hace
+    falta un comprador de prueba con usuario/clave propios del panel
+    de Mercado Pago del compañero, y no hay forma de manejar un
+    navegador real no-headless acá) — se verificó en cambio corriendo
+    el código real de acreditación (`CobroElectronicoService.
+    acreditar_notificacion`, el mismo que correría un webhook o el GET
+    de polling) con un script que solo mockea la respuesta HTTP de
+    `MercadoPagoAdapter.obtener_orden` (nunca se tocó la base a mano
+    con UPDATE/INSERT directos). Con un pago "aprobado" simulado: la
+    cuota pasa a PAGADA, se genera comprobante y pago reales, y la PWA
+    (ya cargada, con la orden guardada en localStorage) lo detecta solo
+    y muestra toast + comprobante + limpia el pendiente. Con la cuota
+    cerrada por otra vía primero (cobro real en efectivo vía
+    `POST /cobros/mostrador` como secretaria) y la misma simulación de
+    pago aprobado: la orden pasa a CONFLICTO y la PWA muestra el
+    mensaje de devolución manual. Sin errores de consola en ningún
+    caso.
+  - Se regeneró `demo cargar` dos veces (antes y después de probar,
+    para no dejar cuotas de Constanza/Josefina pagadas de prueba) — la
+    contraseña demo cambia en cada corrida, no quedó anotada en ningún
+    lado a propósito (es la contraseña de un entorno de desarrollo
+    local, no un secreto que vaya a un archivo).
+- **Pendiente, responsabilidad de quien corra la prueba manual
+  completa** (no se pudo hacer desde este entorno sin navegador
+  interactivo ni comprador de prueba propio): el paso del spec que pide
+  pagar de verdad en el checkout de Mercado Pago en incógnito con el
+  comprador de prueba, confirmar que la campana avisa con la
+  notificación real del backend (`PAGO_RECIBIDO`, no simulada), y los
+  dos casos de UI que necesitan una cuota pendiente real y vigente para
+  reproducir con un click real en vez de localStorage inyectado a mano:
+  409 (tocar "Pagar" sobre una cuota que se saldó mientras la lista
+  estaba abierta) y 422 (perfil sin email). La lógica de estos tres
+  casos se confirmó por lectura de código y, 409, contra el backend
+  real por `curl` — no en la UI en vivo.
+
+### Tarea O.1 — Saldo con mora tras pagar, y aviso de vencimiento próximo
+
+Ajuste pedido después de la Tarea O, mismo PR: cubrir el caso en que la
+mora sigue corriendo entre crear la orden y que Mercado Pago acredita
+el pago — el `monto` de la orden quedó congelado en el momento de
+crearla, pero la cuota puede deber más para cuando se acredita.
+
+- **`usePagoOnline.js`**: la fase `'pagado'` dejó de existir — nunca
+  tuvo vista propia (la resolvía un efecto en `Pagos.jsx` que encima
+  había que acordarse de cerrar, bug de la Tarea O). Ahora, al resolver
+  `PAGADA`, el hook llama a `onPagado(cuotaId, orden)` y vuelve directo
+  a `'idle'`: `Pagos.jsx` decide con esos dos datos qué mostrar, sin
+  ningún estado intermedio que cerrar. El `cuotaId` que le llega a
+  `onPagado` no puede salir del estado `cuotaId` del hook tal cual
+  (los closures de `consultar`/`iniciarPolling` no lo llevan en sus
+  deps y pueden estar viejos) — se agregó `cuotaIdRef`, un espejo del
+  estado que se lee en el momento exacto de la resolución, antes de
+  limpiarlo.
+- **`Pagos.jsx`, `onPagado`**: recarga `cuentaCorriente` + `pagos`,
+  busca la cuota recién pagada en la lista fresca de pendientes por
+  `id` y mira su `saldo_pendiente`. Si es `0` (el caso normal): toast
+  de éxito de siempre. Si es `> 0`: toast
+  *"Recibimos tu pago de $X. Quedó un saldo de $Y por recargo por
+  mora"* — `$X` es `orden.monto` (lo que la familia pagó de verdad en
+  Mercado Pago, no lo que "debería" haber sido) y `$Y` el
+  `saldo_pendiente` fresco. La cuota vuelve a aparecer en la lista de
+  pendientes sola (ya sale así de `cuentaCorriente`), con botón
+  "Pagar" normal — no "Retomar pago": no se guarda ninguna orden
+  pendiente nueva para ese resto, el `cuotaId` del hook ya se limpió
+  al resolver. El comprobante se sigue mostrando en los dos casos (el
+  pago parcial también generó un pago y un comprobante reales).
+- **Verificado contra el backend real** simulando una acreditación
+  parcial con el mismo mecanismo de la Tarea O (mockear solo
+  `MercadoPagoAdapter.obtener_orden` para que el "monto aprobado" sea
+  menor al saldo real de la cuota en ese momento — mismo efecto que si
+  la mora hubiera subido el total entre crear la orden y acreditar, sin
+  tocar la base a mano). Confirmado: la orden queda `PAGADA`, la cuota
+  queda `PAGO_PARCIAL` con saldo, el toast muestra los montos
+  correctos y el botón vuelve a decir "Pagar". Sin errores de consola.
+- **`diasHasta(fechaISO)`** (nuevo, en `utils/format.js`): días de
+  calendario entre hoy (local, vía `hoyLocalISO()`) y una fecha,
+  negativo si ya pasó — mismo patrón anti-UTC que el resto del
+  archivo, nada de `.toISOString()` directo.
+- **Hoja de confirmación**: si `diasHasta(cuota.fecha_vencimiento)`
+  está entre 0 y 3 (inclusive) se agrega *"Si el pago se acredita
+  después del vencimiento, se suma el recargo por mora"*. A propósito
+  **no** se muestra para cuotas ya vencidas (`EN_MORA`, días negativos)
+  — el pedido decía explícitamente "los próximos 3 días", no "vencidas
+  o por vencer", y la instrucción fue no inventar reglas más
+  específicas. Verificado con Playwright contra dos cuotas reales del
+  backend: una vencida en diciembre de 2025 (sin aviso) y una que vence
+  en 3 días (con aviso).
 
 ## Flujo de trabajo
 

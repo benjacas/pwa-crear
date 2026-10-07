@@ -188,3 +188,6 @@ Todo da 403 salvo /auth/me. La cuenta tiene la clave provisoria: hay que cambiar
 "Usuario o contraseña incorrectos" o error 429. Tras 5 intentos fallidos el login se bloquea unos minutos, y mientras dura ni la clave correcta entra. Esperá en vez de seguir probando.
 Crear un usuario con app.cli crear falla con "no es un correo válido". No uses dominios .test ni .local: la validación consulta el DNS y esos dominios no existen. Usá @example.com.
 Reglas de contraseña: mínimo 10 caracteres, sin la parte del correo antes de la @, ni triviales, y distinta de la actual.
+
+
+- **Mercado Pago en el sandbox: `FIRMA_INVALIDA` con pagos reales.** Con una cuenta de prueba el token es `APP_USR-...` (no `TEST-...`). Las simulaciones del panel validan, pero los avisos de pagos reales pueden fallar si la clave del webhook no es la que firma esas notificaciones. Se ve en `webhook_eventos` (`resultado`, `firma_valida`). No es un error de código: depende de la clave que firma cada aviso. Sin firma válida el backend no acredita nada, a propósito.

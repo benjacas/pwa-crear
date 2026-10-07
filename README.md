@@ -108,7 +108,7 @@ src/
 |---|---|
 | Login (con 2FA y renovación automática de sesión) | ✅ Real |
 | Home (avisos de cuota, asistencia y apto físico) | ✅ Real |
-| Pagos (cuotas pendientes, historial y recibos en PDF) | ✅ Real, solo lectura: todavía no se paga online |
+| Pagos (cuotas pendientes, historial, recibos en PDF y pago online de cuotas) | ✅ Real |
 | Asistencia | ✅ Real |
 | Clases y Horarios (calendario con feriados) | ✅ Real |
 | Clases disponibles | ✅ Real: la familia pide un lugar y la secretaría lo confirma, inscribe y genera la cuota |
@@ -118,7 +118,7 @@ src/
 | Vestuario (cuotas y pagos, desde Eventos) | ✅ Real, solo lectura: el pago online está pendiente |
 | Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
 | Entradas con butacas | ⬜ Pendiente: el backend ya tiene el módulo para el personal; faltan los endpoints de portal y el pago online |
-| Pago online (Mercado Pago) | ⬜ Pendiente: un único sistema de cobro para cuotas, vestuario, matrícula y entradas |
+| Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅; vestuario, matrícula y entradas todavía pagan solo en mostrador |
 
 ## Convenciones a respetar
 
