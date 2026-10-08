@@ -3210,24 +3210,31 @@ crearla, pero la cuota puede deber más para cuando se acredita.
 - **`Pagos.jsx`, `onPagado`**: recarga `cuentaCorriente` + `pagos`,
   busca la cuota recién pagada en la lista fresca de pendientes por
   `id` y mira su `saldo_pendiente`. Si es `0` (el caso normal): toast
-  de éxito de siempre. Si es `> 0`: toast
-  *"Recibimos tu pago de $X. Quedó un saldo de $Y por recargo por
-  mora"* — `$X` es `orden.monto` (lo que la familia pagó de verdad en
-  Mercado Pago, no lo que "debería" haber sido) y `$Y` el
-  `saldo_pendiente` fresco. La cuota vuelve a aparecer en la lista de
-  pendientes sola (ya sale así de `cuentaCorriente`), con botón
-  "Pagar" normal — no "Retomar pago": no se guarda ninguna orden
-  pendiente nueva para ese resto, el `cuotaId` del hook ya se limpió
-  al resolver. El comprobante se sigue mostrando en los dos casos (el
-  pago parcial también generó un pago y un comprobante reales).
+  de éxito de siempre. Si es `> 0`: toast *"Recibimos tu pago de $X.
+  Quedó un saldo de $Y"*, con *" por recargo por mora"* agregado al
+  final solo si `recargo_mora` de la cuota fresca es `> 0` — pedido
+  explícito aparte: la cuota puede quedar con saldo sin que haya mora
+  todavía (una `PENDIENTE` recién cruzó a `PAGO_PARCIAL` porque el pago
+  no alcanzó), y ahí no hay que inventarle una razón que no es. `$X` es
+  `orden.monto` (lo que la familia pagó de verdad en Mercado Pago, no
+  lo que "debería" haber sido) y `$Y` el `saldo_pendiente` fresco. La
+  cuota vuelve a aparecer en la lista de pendientes sola (ya sale así
+  de `cuentaCorriente`), con botón "Pagar" normal — no "Retomar pago":
+  no se guarda ninguna orden pendiente nueva para ese resto, el
+  `cuotaId` del hook ya se limpió al resolver. El comprobante se sigue
+  mostrando en los dos casos (el pago parcial también generó un pago y
+  un comprobante reales).
 - **Verificado contra el backend real** simulando una acreditación
   parcial con el mismo mecanismo de la Tarea O (mockear solo
   `MercadoPagoAdapter.obtener_orden` para que el "monto aprobado" sea
   menor al saldo real de la cuota en ese momento — mismo efecto que si
   la mora hubiera subido el total entre crear la orden y acreditar, sin
-  tocar la base a mano). Confirmado: la orden queda `PAGADA`, la cuota
-  queda `PAGO_PARCIAL` con saldo, el toast muestra los montos
-  correctos y el botón vuelve a decir "Pagar". Sin errores de consola.
+  tocar la base a mano). Dos casos a propósito: una cuota `EN_MORA`
+  (`recargo_mora` ya en `1000`) y una `PENDIENTE` (`recargo_mora` en
+  `0`) — confirmado que el toast dice "...por recargo por mora" solo en
+  la primera. En ambos casos la orden queda `PAGADA`, la cuota
+  `PAGO_PARCIAL` con saldo, y el botón vuelve a decir "Pagar". Sin
+  errores de consola.
 - **`diasHasta(fechaISO)`** (nuevo, en `utils/format.js`): días de
   calendario entre hoy (local, vía `hoyLocalISO()`) y una fecha,
   negativo si ya pasó — mismo patrón anti-UTC que el resto del
@@ -3241,6 +3248,180 @@ crearla, pero la cuota puede deber más para cuando se acredita.
   específicas. Verificado con Playwright contra dos cuotas reales del
   backend: una vencida en diciembre de 2025 (sin aviso) y una que vence
   en 3 días (con aviso).
+
+## Tarea P — Pago online de vestuario + generalizar usePagoOnline
+
+**Spec**: mismo botón "Pagar" que cuotas (Tarea O), ahora para cada cuota
+de vestuario, reusando el mecanismo entero (hoja, polling de 5s/2min,
+estados) en vez de duplicarlo. Solo front — el backend (`feat/pago-
+vestuario-portal`) ya estaba mergeado a `main` de `crear-backend` cuando
+arrancó esta tarea (confirmado con el openapi.json real antes de tocar
+nada: `POST /portal/hijas/{id}/vestuario/{cargo_id}/orden-pago` ya
+existía, igual que el `GET /ordenes-pago/{id}` genérico de la Tarea O —
+no hizo falta tocar una rama aparte del backend).
+
+- **Paso 0**: `CuotaVestuarioDeLaFamilia.id` **es** el `cargo_id` de la
+  URL (confirmado leyendo `schemas/portal.py`, con un comentario del
+  propio backend que lo dice explícito). `ConceptoVestuario` (
+  `conceptos_cobro.py`) no exige pagar las cuotas del traje en orden —
+  mismo criterio que mostrador — y cada orden es por el saldo completo
+  de UN cargo, nunca junta varios. Error 409 real: `ERR_CARGO_PAGADO`
+  (`"Esta cuota de vestuario ya está pagada."`); 404 real:
+  `ERR_NO_ENCONTRADO` (genérico, no específico de vestuario) — por eso
+  el texto que ve la familia ("No pudimos encontrar esta cuota") lo pone
+  el front, no viene del backend como en 502/503.
+- **`usePagoOnline.js` generalizado**: ahora recibe `(alumnoId, tipo,
+  crearOrden, onPagado)` en vez de tener `crearOrdenPagoCuota` fijo
+  adentro. La clave de localStorage pasó de
+  `crear_orden_pendiente:<alumnoId>` (una sola por alumna, para
+  cualquier cuota) a `crear_orden_pendiente:<alumnoId>:<tipo>:<conceptoId>`
+  — **un slot por concepto**, no uno solo por alumna. Esto en los
+  hechos también mejora cuotas (antes, abrir el pago de una segunda
+  cuota antes de terminar la primera le hacía perder el rastro a la
+  primera — limitación que quedó documentada como aceptada en la Tarea
+  O); ahora cada cuota, de cualquiera de los dos tipos, tiene su propio
+  slot independiente y ninguna pisa a la otra.
+  - **Solo puede haber UNA hoja activa a la vez** (un `fase`/`orden`
+    por instancia del hook — es lo único que el usuario puede estar
+    mirando), aunque haya varias órdenes pendientes en simultáneo: las
+    demás viven en un nuevo `pendientes` (`Set` de conceptoId) que
+    controla el label de cada botón ("Pagar" vs "Retomar pago") sin
+    pollearlas en segundo plano. `abrirPago` frena cualquier polling
+    activo antes de arrancar uno nuevo (no pueden correr dos
+    `setInterval` del mismo hook pisándose el `fase` uno al otro).
+  - **Al montar**: escanea TODAS las claves `crear_orden_pendiente:
+    <alumnoId>:<tipo>:*` (no una sola fija), llena `pendientes` de
+    una (síncrono, antes de cualquier request — los botones ya
+    arrancan bien sin esperar red) y después consulta cada una una
+    vez. La primera que siga `CREADA` pasa a ser el flujo activo y
+    arranca su espera; las que ya se resolvieron (`PAGADA`/
+    `CONFLICTO`) se limpian y disparan `onPagado` igual, aunque nadie
+    las esté mirando.
+  - `conceptoId` (antes `cuotaId`) ya no controla el label del botón
+    (eso lo hace `pendientes` ahora) — se puede setear apenas se llama
+    `abrirPago`, incluso antes de saber si el POST sale bien, porque ya
+    no hay riesgo de que un fallo deje "Retomar pago" pegado en un
+    botón que no tiene ninguna orden real atrás.
+- **`api/client.js`**: `crearOrdenPagoVestuario(alumnoId, cargoId)`
+  (POST). `getOrdenPago` no cambió — ya era genérico (la URL solo
+  necesita el id de la orden).
+- **`components/PagoOnlineHoja.jsx`** (nuevo): la hoja de confirmación,
+  la espera y el mapeo de errores "no silenciosos" (422 con link a
+  Perfil, 502/503 con el mensaje tal cual del backend, fallback
+  genérico) quedaron acá, compartidos por `Pagos.jsx` y `Vestuario.jsx`.
+  Los errores silenciosos (409/404 en vestuario, 409 en cuotas) **no**
+  llegan a este componente: cada página los intercepta antes con su
+  propio `useEffect` (toast + recarga + `cerrarHoja()`) y nunca deja
+  que `abierta` sea `true` para esos casos — el componente no sabe nada
+  de 409 ni 404 a propósito. Dos textos quedaron parametrizados porque
+  diferían entre pantallas sin ser errores: `concepto` (el label de la
+  primera fila del desglose — `"Importe de la cuota"` en Pagos.jsx, el
+  `cuota.concepto` real del backend en Vestuario.jsx, ej. *"Tutú
+  romántico y malla · Apertura - cuota 3/3"*) y `nombrePantalla` (el
+  texto de "sin_confirmar" decía literal "Pagos", hacía falta poder
+  decir "Vestuario" ahí). El resto del texto (incluida la aclaración
+  "Se paga el saldo completo de la cuota en un solo pago.") se dejó
+  idéntico a propósito, sin volverlo genérico, porque el pedido exigía
+  que `Pagos.jsx` quedara sin cambios visibles.
+- **`Pagos.jsx`**: reescrito para usar la hoja y el hook genéricos, sin
+  ningún cambio de texto ni de comportamiento visible (verificado
+  comparando contra la versión de la Tarea O). De paso quedó expuesto
+  (no introducido acá) un bug previo a toda esta serie de tareas:
+  `pendienteTotal === 0` nunca daba `true` porque
+  `cuenta_corriente.total_exigible` llega del backend como **string**
+  (`"0"`, no `0` — Decimal serializado por Pydantic), así que el
+  `EmptyState` "¡Estás al día!" jamás se mostraba con una familia sin
+  deuda; en su lugar se veía un hueco vacío entre el resumen y el
+  historial. Confirmado con `git show` que ya estaba así desde antes
+  del primer commit de esta serie de tareas (nada que ver con el PR de
+  pago online). Se corrigió la condición a `cuotasPendientes.length ===
+  0` (un array, inmune al problema de tipo) por ser un cambio de una
+  línea, obviamente correcto, en un archivo que esta tarea ya estaba
+  tocando — no se tocó nada más fuera de este archivo por el mismo
+  motivo.
+- **`hooks/useVestuario.js`**: ahora expone `recargar()` igual que
+  `useCargos` (devuelve los datos frescos, no solo actualiza el
+  estado — el flujo de pago necesita leer la cuenta recién acreditada
+  en el mismo tick en que se resuelve).
+- **`Vestuario.jsx`**: un botón por cuota con `saldo_pendiente > 0` y
+  `estado !== 'PAGADO'` (las ya pagadas no tienen botón, como pedía el
+  spec). `onPagado` recarga vestuario, busca la cuenta que contiene el
+  cargo pagado y decide el toast en este orden: si la cuenta quedó
+  `listo_para_entrega`, el mensaje de "completo y listo para entrega"
+  (gana porque implica que la cuota también quedó en saldo 0, los dos
+  casos nunca se solapan en la práctica); si no, y la cuota todavía
+  tiene saldo, el de "Quedó un saldo de $Y" **sin mencionar mora en
+  ningún caso** (vestuario no tiene recargo por mora — por eso tampoco
+  hay ningún `aviso` en su `<PagoOnlineHoja>`, a diferencia de
+  Pagos.jsx); si no, el éxito simple de siempre. El comprobante se
+  arma buscando el pago más nuevo entre **todos** los `.pagos` de
+  **todas** las cuentas (`cuentasFrescas.flatMap(c => c.pagos)`, no
+  hay un endpoint de pagos aparte como en cuotas). **A propósito no se
+  tocó** la lista de "Pagos" existente (solo botón de descarga, sin
+  abrir comprobante al tocar la fila): no estaba pedido y ya hacía algo
+  — se había agregado sin querer en un primer borrador y se revirtió
+  antes de probar nada.
+- **Verificado contra el backend real** (branch `main` de
+  `crear-backend`, ya con ambos merges, Docker local, contraseña demo
+  vigente dada por el usuario — no generada por mí, no se corrió
+  `demo cargar`/`demo borrar` en esta tarea) con Playwright headless
+  (`npx playwright`, `chromium-cli` sigue sin estar instalado acá):
+  - Crear la orden de un cargo de vestuario, reutilización con un POST
+    repetido por `curl` (mismo `id` de orden), desglose de la hoja
+    mostrando el `concepto` real del cargo, clic en "Ir a Mercado
+    Pago" abriendo una pestaña nueva de verdad con la URL real
+    (evento `popup` de Playwright) sin bloquear la navegación,
+    "esperando" con su botón, y reanudación tras recargar la página a
+    mitad de espera (confirmado con `waitForSelector` explícito — un
+    primer intento con un `waitForTimeout` fijo de 2s dio un falso
+    negativo por timing, no era un bug real).
+  - **Dos órdenes pendientes a la vez sin pisarse**: se crearon por
+    `curl` órdenes reales para dos cargos distintos de la misma alumna
+    (cuota 2/3 y 3/3 de vestuario) y se inyectaron ambas claves de
+    localStorage; la pantalla mostró los dos botones "Retomar pago" a
+    la vez, cada uno reusando su propia orden al tocarlo (confirmado
+    por el `order_id` del `href` de cada uno), y las dos claves de
+    localStorage sobrevivieron intactas. **No se pudo probar esta
+    combinación específica con una cuota regular + una de vestuario**
+    (ver limitación de abajo) — se probó en cambio con dos cuotas de
+    vestuario distintas, que ejercita exactamente la misma lógica de
+    namespacing por `conceptoId` (el `tipo` es un segmento más de la
+    misma clave, no hay ninguna rama de código que trate "cuota" y
+    "vestuario" distinto en este punto).
+  - 409 y 404 contra el backend real por `curl` (sin simular nada):
+    `ERR_CARGO_PAGADO` y `ERR_NO_ENCONTRADO` confirmados tal cual se
+    documentan arriba.
+  - Logout: se inyectaron claves `crear_orden_pendiente:` de ambos
+    tipos (`cuota` y `vestuario`, con alumnoId falso) más
+    `crear_notifs_leidas`, se cerró sesión desde Perfil, y las 8+
+    claves `crear_*` quedaron en cero.
+  - **Regresión de cuotas: validada por código compartido, NO por un
+    ciclo completo en vivo.** Las 3 hijas de la única familia de login
+    de prueba (`familia@demo`) ya tenían todas sus cuotas pagas de
+    tareas anteriores. La vía para reabrir una (anular un pago) está
+    reservada al rol `directora`, y esa cuenta
+    (`direccion@creardanza.com.ar`) no es una de las que arma `demo
+    cargar` — no es descartable ni tengo su contraseña. Se le avisó al
+    usuario (dos idas y vueltas: primero se intentó anular como
+    secretaria y lo bloqueó el clasificador de auto-modo como "Modify
+    Shared Resources"; reintentado con permiso explícito, lo bloqueó
+    el backend mismo por rol) y decidió seguir sin ese ciclo en vivo
+    en vez de tocar la cuenta de dirección. Lo que sí queda probado:
+    `usePagoOnline` es el mismo código para los dos tipos (no hay
+    ninguna rama `if (tipo === 'cuota')` en todo el hook), así que
+    todo lo verificado en vivo para vestuario (creación, reuso,
+    reanudación, no-colisión, polling, apertura de Mercado Pago) corre
+    igual para cuotas; lo que es específico de `Pagos.jsx` (el mensaje
+    de saldo con mora, el aviso de vencimiento) no se tocó en esta
+    tarea y se probó en la Tarea O.1. `npm run lint` y `npm run build`
+    limpios.
+- **Decisión pendiente (nueva)**: si en algún momento hace falta probar
+  algo que requiera rol `directora` (anular pagos, generar cuotas
+  masivas) contra el entorno de desarrollo local, la cuenta real
+  (`direccion@creardanza.com.ar`) no tiene contraseña de prueba
+  conocida ni la regenera `demo cargar` — conseguir una vía de prueba
+  para ese rol (o aceptar que esas pruebas quedan fuera de alcance) es
+  una conversación aparte con el compañero de backend.
 
 ## Flujo de trabajo
 

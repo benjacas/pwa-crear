@@ -115,10 +115,10 @@ src/
 | Evaluaciones | ✅ Real |
 | Perfil (edición de contacto y apto físico) | ✅ Real |
 | Eventos (cartelera y detalle) | ✅ Real, solo lectura |
-| Vestuario (cuotas y pagos, desde Eventos) | ✅ Real, solo lectura: el pago online está pendiente |
+| Vestuario (cuotas y pagos, desde Eventos, con pago online) | ✅ Real |
 | Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
 | Entradas con butacas | ⬜ Pendiente: el backend ya tiene el módulo para el personal; faltan los endpoints de portal y el pago online |
-| Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅; vestuario, matrícula y entradas todavía pagan solo en mostrador |
+| Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅, vestuario ✅; matrícula y entradas todavía pagan solo en mostrador |
 
 ## Convenciones a respetar
 
