@@ -190,6 +190,19 @@ export async function crearOrdenPagoCuota(alumnoId, cuotaId) {
   })
 }
 
+// Mismo mecanismo que crearOrdenPagoCuota (reutiliza la orden activa del
+// cargo si ya existía una), pero para una cuota de vestuario — cada cargo
+// se paga por separado y por el saldo completo, sin importar el orden
+// (igual que en mostrador: VestuarioService.registrar_pago no exige pagar
+// las cuotas del traje en orden).
+export async function crearOrdenPagoVestuario(alumnoId, cargoId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/hijas/${alumnoId}/vestuario/${cargoId}/orden-pago`, {
+    method: 'POST',
+  })
+}
+
+// Genérico: sirve tanto para una orden de cuota como de vestuario (la URL
+// solo necesita el id de la orden, no a qué concepto pertenece).
 // Si la orden sigue CREADA, el backend le pregunta a Mercado Pago antes de
 // contestar (no hace falta esperar al webhook) — ver portal_service.orden_pago.
 export async function getOrdenPago(alumnoId, ordenId) {

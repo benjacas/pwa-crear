@@ -1,17 +1,17 @@
 import { useCallback, useContext, useEffect, useState } from 'react'
-import { Link, useOutletContext } from 'react-router-dom'
-import { Wallet, CalendarCheck2, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react'
+import { useOutletContext } from 'react-router-dom'
+import { Wallet, CalendarCheck2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import Badge from '../components/ui/Badge'
 import Skeleton from '../components/ui/Skeleton'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
-import Modal from '../components/ui/Modal'
-import Spinner from '../components/ui/Spinner'
+import PagoOnlineHoja from '../components/PagoOnlineHoja'
 import ComprobanteModal, { IconoMetodoPago } from '../components/ComprobanteModal'
 import { AlumnoActivoContext } from '../context/AlumnoActivoContext'
 import { useCargos } from '../hooks/useCargos'
 import { usePagoOnline } from '../hooks/usePagoOnline'
 import { useToast } from '../context/ToastContext'
+import { crearOrdenPagoCuota } from '../api/client'
 import { formatMoneda, formatFecha, formatMesLabel, infoEstadoCuota, infoMetodoPago, diasHasta } from '../utils/format'
 
 function BadgeCuota({ cuota }) {
@@ -27,10 +27,6 @@ function BadgeCuota({ cuota }) {
 // lista para que la cuota deje de aparecer como pendiente).
 function esCuotaYaSaldada(error) {
   return error?.status === 409
-}
-
-function esFaltaEmail(error) {
-  return error?.status === 422
 }
 
 export default function Pagos() {
@@ -70,8 +66,12 @@ export default function Pagos() {
     recargarNotificaciones()
   }, [recargar, toast, recargarNotificaciones])
 
-  const pagoOnline = usePagoOnline(alumnoActivo?.alumno_id, onPagado)
-  const { fase, orden, cuotaId: cuotaPendienteId, error: errorPago, cerrarHoja } = pagoOnline
+  const crearOrden = useCallback(
+    (cuotaId) => crearOrdenPagoCuota(alumnoActivo?.alumno_id, cuotaId),
+    [alumnoActivo?.alumno_id],
+  )
+  const pagoOnline = usePagoOnline(alumnoActivo?.alumno_id, 'cuota', crearOrden, onPagado)
+  const { fase, orden, pendientes, error: errorPago, cerrarHoja } = pagoOnline
 
   // 409: no se le pide nada a la familia, se refresca la lista sola.
   useEffect(() => {
@@ -105,7 +105,7 @@ export default function Pagos() {
     .sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento))
   const pendienteTotal = cuentaCorriente?.total_exigible ?? 0
 
-  const cuotaDelResumen = cuotasPendientes.find((c) => c.id === cuotaPendienteId)
+  const cuotaDelResumen = cuotasPendientes.find((c) => c.id === pagoOnline.conceptoId)
   const vencePronto = cuotaDelResumen && diasHasta(cuotaDelResumen.fecha_vencimiento) >= 0 && diasHasta(cuotaDelResumen.fecha_vencimiento) <= 3
 
   const pagosNoAnulados = pagos.filter((p) => !p.anulado)
@@ -140,7 +140,7 @@ export default function Pagos() {
       </div>
 
       {/* Cuotas pendientes */}
-      {pendienteTotal === 0 ? (
+      {cuotasPendientes.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
           title="¡Estás al día!"
@@ -164,7 +164,7 @@ export default function Pagos() {
                 disabled={fase === 'creando'}
                 onClick={() => pagoOnline.abrirPago(cuota.id)}
               >
-                {cuotaPendienteId === cuota.id ? 'Retomar pago' : 'Pagar'}
+                {pendientes.has(cuota.id) ? 'Retomar pago' : 'Pagar'}
               </Button>
             </div>
           ))}
@@ -210,91 +210,22 @@ export default function Pagos() {
         alumno={alumnoActivo}
       />
 
-      <Modal isOpen={hojaAbierta} onClose={cerrarHoja} title="Pagar cuota" size="sm">
-        {fase === 'creando' && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <Spinner />
-            <p className="text-sm text-gray-500">Generando el enlace de pago…</p>
-          </div>
-        )}
-
-        {fase === 'resumen' && orden && (
-          <div className="space-y-4">
-            <dl className="space-y-2 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-gray-400">Importe de la cuota</dt>
-                <dd className="font-medium text-gray-800">{formatMoneda(orden.importe)}</dd>
-              </div>
-              {Number(orden.recargo) > 0 && (
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-gray-400">Recargo Mercado Pago</dt>
-                  <dd className="font-medium text-gray-800">{formatMoneda(orden.recargo)}</dd>
-                </div>
-              )}
-              <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-2">
-                <dt className="text-gray-500 font-medium">Total</dt>
-                <dd className="text-lg font-bold text-gray-800">{formatMoneda(orden.monto)}</dd>
-              </div>
-            </dl>
-            <p className="text-xs text-gray-400">Se paga el saldo completo de la cuota en un solo pago.</p>
-            {vencePronto && (
-              <p className="text-xs text-amber-600">Si el pago se acredita después del vencimiento, se suma el recargo por mora.</p>
-            )}
-            <a
-              href={orden.checkout_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={pagoOnline.confirmarSalida}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-dark hover:shadow-card-md transition-all duration-150"
-            >
-              Ir a Mercado Pago
-            </a>
-          </div>
-        )}
-
-        {fase === 'esperando' && (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <Loader2 size={28} className="text-primary animate-spin" />
-            <p className="text-sm text-gray-500">Esperando la confirmación de Mercado Pago…</p>
-            <Button variant="secondary" onClick={pagoOnline.revisarAhora}>
-              Ya pagué, revisar ahora
-            </Button>
-          </div>
-        )}
-
-        {fase === 'sin_confirmar' && (
-          <div className="space-y-3 text-center py-2">
-            <AlertTriangle size={28} className="text-amber-500 mx-auto" />
-            <p className="text-sm text-gray-600">
-              Todavía no vemos tu pago. Si ya pagaste, puede demorar unos minutos. Lo vamos a revisar cuando vuelvas a abrir Pagos.
-            </p>
-            <Button variant="secondary" className="w-full justify-center" onClick={pagoOnline.revisarAhora}>
-              Revisar ahora
-            </Button>
-          </div>
-        )}
-
-        {fase === 'conflicto' && (
-          <div className="space-y-3 text-center py-2">
-            <AlertTriangle size={28} className="text-red-500 mx-auto" />
-            <p className="text-sm text-gray-600">
-              Mercado Pago confirmó tu pago, pero no lo pudimos acreditar solo. Avisale a la academia para que lo revisen a mano.
-            </p>
-          </div>
-        )}
-
-        {fase === 'error' && errorPago && !esCuotaYaSaldada(errorPago) && (
-          <div className="space-y-3 text-center py-2">
-            <AlertTriangle size={28} className="text-red-500 mx-auto" />
-            <p className="text-sm text-gray-600">{errorPago.mensaje}</p>
-            {esFaltaEmail(errorPago) && (
-              <Link to="/perfil" onClick={cerrarHoja} className="text-sm font-medium text-primary hover:underline">
-                Ir a Perfil a cargarlo
-              </Link>
-            )}
-          </div>
-        )}
-      </Modal>
+      <PagoOnlineHoja
+        abierta={hojaAbierta}
+        onClose={cerrarHoja}
+        titulo="Pagar cuota"
+        nombrePantalla="Pagos"
+        fase={fase}
+        concepto="Importe de la cuota"
+        importe={orden?.importe}
+        recargo={orden?.recargo}
+        total={orden?.monto}
+        checkoutUrl={orden?.checkout_url}
+        aviso={vencePronto ? 'Si el pago se acredita después del vencimiento, se suma el recargo por mora.' : null}
+        error={errorPago}
+        onConfirmarSalida={pagoOnline.confirmarSalida}
+        onRevisarAhora={pagoOnline.revisarAhora}
+      />
     </div>
   )
 }
