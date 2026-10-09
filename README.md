@@ -59,6 +59,8 @@ VITE_API_URL=http://localhost:8000
 
 > En Windows, no crees el `.env` desde el Bloc de notas con "Guardar como": suele guardarlo como `.env.txt` y Vite no lo lee. Usá `Copy-Item` como arriba.
 
+`VITE_PUBLIC_URL` es el dominio público que entra en el texto del QR de cada entrada (`${VITE_PUBLIC_URL}/entrada/<codigo>`). Sin definir, se usa `window.location.origin` — anda para desarrollo local, pero en producción tiene que ser el dominio real: si no, el QR escaneado desde el celular de otra persona abriría `localhost`.
+
 ## 3. Levantar el backend (obligatorio)
 
 La app no tiene modo de prueba sin backend: el login y todo lo que se ve vienen de datos reales. Seguí [`BACKEND_SETUP.md`](./BACKEND_SETUP.md) y volvé acá cuando `http://localhost:8000/health` responda.
@@ -117,7 +119,7 @@ src/
 | Eventos (cartelera y detalle) | ✅ Real, solo lectura |
 | Vestuario (cuotas y pagos, desde Eventos, con pago online) | ✅ Real |
 | Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
-| Entradas con butacas | ⬜ Pendiente: el backend ya tiene el módulo para el personal; faltan los endpoints de portal y el pago online |
+| Entradas con butacas | 🟡 Parcial: mis entradas con QR ✅; elegir y cambiar butacas, pago online y devoluciones ⬜ |
 | Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅, vestuario ✅; matrícula y entradas todavía pagan solo en mostrador |
 
 ## Convenciones a respetar

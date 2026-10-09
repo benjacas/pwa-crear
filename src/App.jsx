@@ -22,6 +22,7 @@ import ResumenCompra from './pages/ResumenCompra'
 import MisEntradas from './pages/MisEntradas'
 import VestuarioEvento from './pages/VestuarioEvento'
 import Vestuario from './pages/Vestuario'
+import EntradaPublica from './pages/EntradaPublica'
 
 export default function App() {
   return (
@@ -29,6 +30,13 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Pública a propósito: la abre cualquiera que escanee el QR de
+                una entrada, sin sesión iniciada — fuera de RequireRole (no
+                pide token) y fuera de Shell (sin barra de navegación ni
+                AlumnoActivoProvider, no tiene nada que ver con "qué hija
+                está viendo" un tutor logueado). */}
+            <Route path="/entrada/:codigo" element={<EntradaPublica />} />
+
             {/* AlumnoActivoProvider envuelve login + selector + portal para
                 que sobreviva la navegación entre esas 3 pantallas (si solo
                 envolviera el layout con Shell, se remontaría con el mock al

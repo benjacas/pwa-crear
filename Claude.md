@@ -3423,6 +3423,175 @@ no hizo falta tocar una rama aparte del backend).
   para ese rol (o aceptar que esas pruebas quedan fuera de alcance) es
   una conversación aparte con el compañero de backend.
 
+## Tarea Q — Mis entradas con QR (reemplaza el mock) + página pública /entrada/:codigo
+
+**Spec**: primera fase real del módulo de entradas — reemplazar el mock
+de `MisEntradas.jsx` por datos reales (`GET /portal/entradas`, backend en
+`feat/entradas-portal-lectura`, ya mergeado en el momento de esta tarea)
+y agregar la página pública que abre el QR de cada entrada
+(`GET /entradas/publica/{codigo}`, sin sesión). Elegir y cambiar
+butacas, pago online y devoluciones quedan para fases siguientes — nada
+de eso se tocó.
+
+- **Paso 0**: `MapaButacas.jsx`, `ResumenCompra.jsx`, `VestuarioEvento.jsx`,
+  `EventoButacas.jsx`, `useEvento.js`, `useMisEntradas.js` y
+  `Shell.jsx` **no se tocaron** — siguen sirviendo al flujo mock viejo
+  (`misEntradasApi` vía `useOutletContext()`), que esta tarea no
+  reemplaza todavía. La nueva `MisEntradas.jsx` usa su propio
+  `useEntradas()`, sin pasar por ese contexto.
+  - `fetchConToken` (api/client.js) renueva sesión y redirige a `/login`
+    en un 401 — la página pública no puede pasar por ahí (nadie que
+    escanea un QR en la puerta tiene sesión): `getEntradaPublica()` usa
+    `fetch` directo, sin `Authorization`, y trata un 404 como resultado
+    válido (`return null`), no como error.
+  - **`EntradaDeLaCompra` (lo que devuelve `/portal/entradas`) NO trae
+    los "seis números"** (`codigo_corto`) — ese campo solo está en
+    `EntradaPublica` (lo que devuelve `/entradas/publica/{codigo}`,
+    confirmado leyendo los dos schemas). Por eso `codigo_corto` se
+    muestra en la página pública (`EntradaPublica.jsx`) pero no en
+    `MisEntradas.jsx` ni en el PNG descargado: ahí no hay forma de
+    tenerlo sin recalcularlo a mano (`sha256(codigo) % 1_000_000`,
+    lógica del backend que no correspondía duplicar en el front).
+  - `entradas` viene **vacío** mientras la compra no esté `PAGADA` (lo
+    arma así el propio backend, `compras_de_familias` en
+    `compras_entradas_service.py`) — aunque `cantidad` sea mayor a
+    cero. `ANULADA` queda filtrada antes de llegar al portal (nunca se
+    ve desde acá) — se dejó el label igual por si el filtro cambia.
+- **QR: se eligió `uqr`** (instalado con `--save-exact`, queda
+  `"uqr": "0.1.3"` pelado en `package.json`, sin rango). Motivos:
+  cero dependencias de runtime, sin `postinstall`/`preinstall` ni
+  `gypfile` (nada de binarios — el pedido lo marcaba explícito, hubo un
+  problema antes con un paquete así), MIT, 79 KB sin comprimir / 8
+  archivos, publicado hace ~6 meses por `antfu`/`pi0` (unjs). Se
+  descartaron: `qrcode` (depende de `pngjs`/`yargs`/`dijkstrajs`, viola
+  "sin dependencias de runtime"), `qr-code-styling` (depende de
+  `qrcode-generator` + build con webpack, pensado para estilizar, de
+  más para esto), `qrcode-svg` (cero deps también, pero sin
+  publicaciones desde 2022). `qrcode-generator` (el clásico de
+  kazuhikoarase) era la otra opción razonable — se prefirió `uqr` por
+  más chico y con `encode()` devolviendo directo una matriz 2D de
+  booleanos, que es lo que hacía falta para dibujar a mano en un
+  canvas (ver abajo) sin pasar por SVG.
+- **`utils/qr.js`** (nuevo): `dibujarQR(ctx, texto, x, y, tamano)`
+  dibuja la matriz de `uqr.encode()` módulo por módulo directo en un
+  `<canvas>` — nunca `currentColor`, nunca SVG con CSS: así el QR queda
+  negro sobre blanco con margen blanco (4 módulos, el mínimo del
+  estándar ISO/IEC 18004) pase lo que pase con el tema, tal como pedía
+  el spec. Una sola implementación, la usan tanto `<QRCode/>` en
+  pantalla como la descarga en PNG. `urlEntrada(codigo)` arma el texto
+  del QR: `${VITE_PUBLIC_URL || window.location.origin}/entrada/${codigo}`
+  — documentada en `.env.example` y en el README (sin definir, al
+  escanear desde el celular de otra persona en producción abriría
+  `localhost` si el build no la fija).
+- **`components/QRCode.jsx`**: no guarda nada — dibuja de nuevo en el
+  `<canvas>` cada vez que se monta o cambia el texto, nada de caché ni
+  de archivo intermedio (coherente con no guardar datos de entradas en
+  ningún lado, ítem 8 del pedido).
+- **`utils/descargarEntrada.js`**: compone evento + función + sala +
+  butaca + el QR grande en un `<canvas>` nuevo (medido en dos pasadas:
+  una para saber cuántas líneas ocupa el título del evento sin dibujar
+  nada todavía, porque cambiar `canvas.width`/`height` resetea el
+  contexto incluida la fuente; después, ya con el alto final, se dibuja
+  todo de una) y lo baja como PNG (`canvas.toBlob` + `<a download>` +
+  `URL.revokeObjectURL`). Nombre de archivo: `slug()` saca tildes con
+  `normalize('NFD')` + regex (no un mapa de reemplazos a mano) y pasa
+  todo a minúsculas, ej. `entrada-festival-de-fin-de-ano-2026-fila-c-butaca-7.png`.
+- **`MisEntradas.jsx`** (reescrita por completo — el mock queda en el
+  historial de git, no en el repo): agrupa por `funcion?.fecha ??
+  evento.fecha` contra `hoyLocalISO()` en Próximas/Pasadas. Por cada
+  cuota de `entradas`, en este orden: `usada` → "ya ingresó", sin QR;
+  `compra.estado === 'ANULADA'` → sin QR (caso muerto hoy, ver Paso 0);
+  sin `codigo`/`butaca` → sin QR, con `motivo_bloqueo` si vino, o un
+  texto genérico ("Todavía no se eligieron las butacas.") si vino
+  `null` (pasa cuando `puede_elegir_butacas` es `true` pero todavía no
+  se eligió nada — el backend no manda un motivo para ese caso, no hay
+  nada que explicar todavía); si no, QR + "Fila X · Butaca N" +
+  "Descargar entrada". Los cargos se listan siempre (número,
+  vencimiento, estado, importe) con "El pago se registra en la
+  academia." abajo — sin botón de pagar, a propósito. `entradas` vacío
+  (compra no `PAGADA` todavía) no renderiza la sección, se ve solo la
+  de cargos. Fechas e importes: `formatFecha`/`formatMoneda`/
+  `formatHora` (nueva en `utils/format.js`, recorte de string sobre
+  `'HH:MM:SS'`, no `Date` — una hora sola no tiene zona horaria que
+  corregir) existentes; nada de `.toISOString()` (bloqueado por el
+  lint de todos modos).
+- **`EntradaPublica.jsx`** (nueva): ruta `/entrada/:codigo`, agregada
+  en `App.jsx` **fuera** de `RequireRole` y fuera del `<Route
+  element={<AlumnoActivoProvider>...}>` — sin pedir token, sin Shell
+  (sin Header/BottomNav), con su propio layout standalone. Muestra
+  evento, función, sala, dirección (link a Google Maps con
+  `rel="noopener noreferrer"` y `target="_blank"` — el código viaja en
+  la URL del QR, no en la de Maps, así que no hay nada ahí para
+  filtrar, pero el `rel` va igual por buena práctica con cualquier link
+  externo), butaca(s), "para", programa e información general, más el
+  `codigo_corto` al pie (las "seis números" para la puerta). 404 o
+  error de red: mismo mensaje, "Esta entrada no existe o fue devuelta."
+  No muestra ningún QR — sería el QR de la página a la que el QR ya te
+  trajo, no tiene sentido.
+- **`Eventos.jsx`**: tarjeta "Mis entradas" agregada antes de la de
+  Vestuario, mismo componente/estilo (ícono + título + bajada +
+  chevron). Vestuario también pasó a vivir dentro del mismo `<div
+  className="space-y-3">` (antes solo tenía margen propio) para que las
+  dos tarjetas queden con el mismo espaciado entre sí y con la
+  cartelera de abajo.
+- **Logout**: no se tocó `AuthContext.jsx` — ningún dato de entradas se
+  guarda en ningún lado (ni localStorage ni nada), así que no hay nada
+  que limpiar. Confirmado con Playwright: después de navegar Mis
+  entradas y la página pública, las claves `crear_*` de localStorage
+  son las mismas que ya ponía el login (ninguna nueva).
+- **De paso**: `.env.example` tenía un `;` colgado al final de
+  `VITE_API_URL` (`http://localhost:8000;`) sin salto de línea — un
+  typo preexistente, no introducido acá, pero se corrigió al agregar
+  `VITE_PUBLIC_URL` en el mismo archivo para no dejarlo al lado de un
+  ejemplo roto.
+- **Verificado contra el backend real** (`crear-backend` en
+  `feat/entradas-portal-lectura`, contraseña demo vigente dada por el
+  usuario — no generada por mí, no se corrió `demo cargar`/`demo
+  borrar`) con Playwright headless:
+  - `GET /portal/entradas` con `familia@demo`: una compra real
+    (Festival de fin de año 2026, `PAGADA`, función real, 1 cargo
+    `PAGADO`, 2 entradas sin butaca todavía con `motivo_bloqueo: null`)
+    — se ve en "Próximas" con el texto genérico de "sin butaca", tal
+    cual lo devuelve el backend, sin simular nada.
+  - Página pública con un código real **con butaca** (de otra familia
+    del mismo evento, encontrado por el panel de admin, nunca se tocó
+    ni se mutó nada): evento, función, sala, dirección con el link a
+    Maps (`rel="noopener noreferrer"`, `target="_blank"` confirmados),
+    butaca, programa, información y `codigo_corto` — todo tal cual
+    responde el backend. 404 real con un código inventado:
+    "Esta entrada no existe o fue devuelta."
+  - Sin sesión: confirmado `localStorage.getItem('crear_access') ===
+    null` en el contexto de browser que abrió la página pública (nunca
+    hizo login).
+  - `npm run lint` y `npm run build` limpios. Bundle: 274.30 kB → 294.64
+    kB (+20.34 kB sin comprimir; gzip 83.00 kB → 89.64 kB, +6.64 kB) —
+    la differencia es `uqr` + las páginas/componentes nuevos.
+  - **Simulado (interceptando la respuesta de `/portal/entradas` con
+    `page.route`, aclarado acá porque la vez pasada no había quedado
+    claro qué era real y qué no)**: la familia de prueba real no tiene
+    ninguna entrada con butaca asignada todavía (para no asignarle una
+    de verdad — eso es `EventoButacas.jsx`, fase que esta tarea no
+    toca), así que el caso "con código" (QR + Fila/Butaca + descarga)
+    se probó con una respuesta fabricada con esa forma exacta. Se
+    confirmó ahí: el botón "Descargar entrada" baja un PNG real (34 KB,
+    nombre de archivo correcto, sin tildes), con el QR, evento, función
+    y butaca dibujados. También por este camino (nada de esto existe
+    hoy en los datos reales de la familia de prueba): una entrada
+    `usada` ("ya ingresó", sin botón de descarga para ella), una compra
+    `PENDIENTE` sin función todavía (mensaje correspondiente, sin
+    entradas listadas, cargos con estado `PENDIENTE`), y el
+    agrupamiento en "Pasadas" con una función de fecha anterior a hoy.
+    Lista vacía y error de red (500 forzado) también se probaron así:
+    los dos textos exactos que pedía el spec.
+  - **No verificado con una herramienta de decodificación de QR real**
+    (no hay `pyzbar`/`opencv`/similar disponible en este entorno, y no
+    se instaló nada nuevo para esto) — se confirmó visualmente que el
+    QR dibujado tiene los tres patrones de localización en las
+    esquinas y el margen blanco correctos, y se confía en que
+    `uqr.encode()` arma la matriz bien (librería madura, no es código
+    propio). Si hace falta una garantía más fuerte, escanearlo con el
+    celular es la prueba que falta.
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en

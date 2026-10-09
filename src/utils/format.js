@@ -36,6 +36,13 @@ export function diasHasta(fechaISO) {
   return Math.round((fecha - hoy) / 86400000)
 }
 
+// 'HH:MM:SS' (o null) -> 'HH:MM'. Recorte de string, no Date: una hora sola
+// (sin fecha) no tiene zona horaria que corregir, así que no hace falta
+// nada más.
+export function formatHora(horaISO) {
+  return horaISO ? horaISO.slice(0, 5) : null
+}
+
 // Estados reales de CuotaResponse (ver database/migrations/005_modulo_cobros.sql):
 // PENDIENTE, EN_MORA, PAGO_PARCIAL, PAGADA, CONDONADA — /cuenta-corriente
 // solo devuelve las tres primeras (las cerradas no vienen en cuotas_pendientes).

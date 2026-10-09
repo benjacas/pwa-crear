@@ -240,3 +240,29 @@ export async function marcarNotificacionLeida(id) {
 export async function marcarTodasLeidas() {
   return fetchConToken(`${API_URL}/api/v1/notificaciones/leidas`, { method: 'POST' })
 }
+
+// CompraEntradasDeLaFamilia[]: { id, evento: {nombre, fecha}, funcion:
+// {fecha, hora, sala_nombre} | null, cantidad, estado (PENDIENTE | PAGADA |
+// ANULADA, aunque esta última no llega nunca — el backend la filtra antes
+// de responder), cargos: [{numero, fecha_vencimiento, estado, importe}],
+// entradas: [{numero, codigo, butaca: {fila, numero} | null, usada}]
+// (vacío si la compra todavía no está PAGADA — las entradas se emiten
+// recién ahí), puede_elegir_butacas, motivo_bloqueo. No va alumno_id en la
+// URL: es de toda la familia, no de una hija puntual (confirmado leyendo
+// portal_service.entradas()).
+export async function getEntradas() {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas`)
+}
+
+// Pública a propósito: nadie que escanea un QR en la puerta tiene sesión
+// iniciada, así que esto NO pasa por fetchConToken (sin Authorization, sin
+// renovar nada). Un 404 acá es un resultado esperado ("esta entrada no
+// existe o se anuló"), no un error — se devuelve null en vez de lanzar,
+// para no arrastrar el manejo de sesión vencida de fetchConToken a una
+// ruta que no tiene sesión.
+export async function getEntradaPublica(codigo) {
+  const res = await fetch(`${API_URL}/api/v1/entradas/publica/${encodeURIComponent(codigo)}`)
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`Error ${res.status}`)
+  return res.json()
+}
