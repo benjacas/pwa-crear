@@ -1,206 +1,166 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import Button from './ui/Button'
-import { generarAsientos, formatMoneda } from '../utils/format'
+import { X, Check, Accessibility } from 'lucide-react'
 
-const COLUMNAS_POR_NUMERO = {
-  20: 2, 18: 3, 16: 4,
-  14: 6, 12: 7, 10: 8, 8: 9, 6: 10, 4: 11, 2: 12,
-  1: 13, 3: 14, 5: 15, 7: 16, 9: 17, 11: 18, 13: 19,
-  15: 21, 17: 22, 19: 23,
+const TAMANO_BUTACA = 32 // px — el mínimo que pedía el pedido, nada de zoom propio: se deshabilita el pinch-zoom del navegador si se achica más de acá sin compensarlo con algo propio, y eso no está pedido.
+
+function estadoDeButaca(butaca, { ocupadas, seleccion, propias }) {
+  if (ocupadas.has(butaca.id)) return 'ocupada'
+  if (seleccion.has(butaca.id)) return 'elegida'
+  if (propias.has(butaca.id)) return 'propia'
+  return 'libre'
 }
 
-const CORRIDA_COLUMNAS_POR_NUMERO = {
-  18: 3, 16: 4, 14: 5, 12: 6, 10: 7, 8: 8, 6: 9, 4: 10, 2: 11,
+const CLASES_POR_ESTADO = {
+  libre: 'bg-white border border-gray-200 text-gray-600 hover:border-primary hover:text-primary',
+  ocupada: 'bg-gray-100 text-gray-300 cursor-not-allowed',
+  elegida: 'bg-primary text-white border border-primary',
+  propia: 'bg-blue-50 text-blue-700 border-2 border-blue-400',
 }
 
-const FILA_A_INDICE = { A: 2, B: 3, C: 4, D: 5, E: 6, F: 7, G: 8, H: 9, I: 10, J: 11, K: 12 }
-
-export default function MapaButacas({ evento, butacasOcupadas }) {
-  const navigate = useNavigate()
-  const [seleccion, setSeleccion] = useState([])
-  const [cantidadRuedas, setCantidadRuedas] = useState(0)
-
-  function toggleAsiento(asiento) {
-    setSeleccion((prev) =>
-      prev.some((a) => a.clave === asiento.clave)
-        ? prev.filter((a) => a.clave !== asiento.clave)
-        : [...prev, asiento]
-    )
-  }
-
-  const { precio, sillasRuedas } = evento.mapaAsientos
-
-  const ruedasSeleccionadas = Array.from({ length: cantidadRuedas }, (_, i) => ({
-    clave: `RUEDAS-${i + 1}`,
-    fila: null,
-    numero: null,
-    sector: 'Silla de ruedas',
-    precio,
-  }))
-
-  function cambiarRuedas(delta) {
-    setCantidadRuedas((prev) => Math.min(sillasRuedas.cupo, Math.max(0, prev + delta)))
-  }
-
-  const todaLaSeleccion = [...seleccion, ...ruedasSeleccionadas]
-  const total = todaLaSeleccion.reduce((acc, a) => acc + a.precio, 0)
-
-  function continuar() {
-    navigate(`/eventos/${evento.id}/resumen`, {
-      state: { butacasSeleccionadas: seleccion, sillasRuedasSeleccionadas: ruedasSeleccionadas },
-    })
-  }
-
-  const filas = generarAsientos(evento.mapaAsientos)
-
-  function Butaca(asiento, gridColumn, gridRow) {
-    const ocupado = butacasOcupadas.includes(asiento.clave)
-    const seleccionado = seleccion.some((a) => a.clave === asiento.clave)
-    return (
-      <button
-        key={asiento.clave}
-        type="button"
-        disabled={ocupado}
-        onClick={() => toggleAsiento(asiento)}
-        aria-label={`Butaca ${asiento.clave}`}
-        style={{ gridColumn, gridRow }}
-        className={`w-6 h-6 rounded-full text-[9px] flex items-center justify-center font-medium transition-colors ${
-          ocupado
-            ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-            : seleccionado
-            ? 'bg-primary text-white'
-            : 'bg-primary-light text-primary hover:bg-primary/20'
-        }`}
-      >
-        {asiento.numero}
-      </button>
-    )
-  }
-
-  function Etiqueta(fila, gridColumn, gridRow) {
-    return (
-      <span
-        key={`${fila}-${gridColumn}`}
-        style={{ gridColumn, gridRow }}
-        className="text-[10px] text-gray-400 flex items-center justify-center"
-      >
-        {fila}
-      </span>
-    )
-  }
-
-  const celdas = [
-    <div
-      key="escenario"
-      style={{ gridColumn: '1 / 25', gridRow: 1 }}
-      className="bg-primary-light/40 text-center text-xs font-medium text-gray-500 rounded-xl py-3 mb-2"
-    >
-      Escenario
-    </div>,
-  ]
-
-  filas.forEach((filaData) => {
-    const gridRow = FILA_A_INDICE[filaData.fila]
-
-    if (filaData.corrida) {
-      celdas.push(Etiqueta(filaData.fila, 1, gridRow))
-      filaData.corrida.forEach((a) =>
-        celdas.push(Butaca(a, CORRIDA_COLUMNAS_POR_NUMERO[a.numero], gridRow))
-      )
-      celdas.push(Etiqueta(filaData.fila, 12, gridRow))
-
-      celdas.push(
-        <div
-          key="ruedas"
-          style={{ gridColumn: '13 / 19', gridRow }}
-          className="flex items-center gap-1.5 text-[10px] text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1"
-        >
-          <span className="leading-tight">
-            Sillas de ruedas
-            <br />
-            Cupo: {sillasRuedas.cupo}
-          </span>
-          <span className="flex items-center gap-1 ml-auto shrink-0">
-            <button
-              type="button"
-              onClick={() => cambiarRuedas(-1)}
-              disabled={cantidadRuedas === 0}
-              className="w-5 h-5 rounded bg-white border border-gray-200 text-gray-500 disabled:opacity-40"
-            >
-              −
-            </button>
-            <span className="w-4 text-center font-semibold text-gray-700">{cantidadRuedas}</span>
-            <button
-              type="button"
-              onClick={() => cambiarRuedas(1)}
-              disabled={cantidadRuedas >= sillasRuedas.cupo}
-              className="w-5 h-5 rounded bg-white border border-gray-200 text-gray-500 disabled:opacity-40"
-            >
-              +
-            </button>
-          </span>
-        </div>
-      )
-      return
-    }
-
-    const [bloque1, bloque2, bloque3, bloque4] = filaData.bloques
-    celdas.push(Etiqueta(filaData.fila, 1, gridRow))
-    bloque1.forEach((a) => celdas.push(Butaca(a, COLUMNAS_POR_NUMERO[a.numero], gridRow)))
-    celdas.push(Etiqueta(filaData.fila, 5, gridRow))
-    bloque2.forEach((a) => celdas.push(Butaca(a, COLUMNAS_POR_NUMERO[a.numero], gridRow)))
-    bloque3.forEach((a) => celdas.push(Butaca(a, COLUMNAS_POR_NUMERO[a.numero], gridRow)))
-    celdas.push(Etiqueta(filaData.fila, 20, gridRow))
-    bloque4.forEach((a) => celdas.push(Butaca(a, COLUMNAS_POR_NUMERO[a.numero], gridRow)))
-    celdas.push(Etiqueta(filaData.fila, 24, gridRow))
-  })
+function Butaca({ butaca, estado, onClick }) {
+  const esRuedas = butaca.tipo === 'silla_ruedas'
+  const tipoTexto = esRuedas ? 'lugar para silla de ruedas' : 'butaca'
+  const estadoTexto = { libre: 'libre', ocupada: 'ocupada', elegida: 'elegida', propia: 'tuya' }[estado]
+  const ariaLabel = esRuedas
+    ? `Fila ${butaca.fila}, lugar para silla de ruedas ${butaca.numero}, ${estadoTexto}`
+    : `Fila ${butaca.fila}, butaca ${butaca.numero}, ${estadoTexto}`
 
   return (
-    <div>
-      <div className="p-4 space-y-4">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">{evento.titulo}</h1>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Elegí tus butacas · {formatMoneda(precio)} cada una
-          </p>
-        </div>
+    <button
+      type="button"
+      disabled={estado === 'ocupada'}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-pressed={estado === 'elegida'}
+      style={{
+        gridColumn: butaca._col,
+        gridRow: butaca._fila,
+        width: TAMANO_BUTACA,
+        height: TAMANO_BUTACA,
+      }}
+      className={`rounded-md text-[10px] font-semibold flex items-center justify-center transition-colors shrink-0 ${CLASES_POR_ESTADO[estado]} ${esRuedas ? 'ring-1 ring-offset-1 ring-sky-400' : ''}`}
+    >
+      {estado === 'ocupada' ? (
+        <X size={14} aria-hidden="true" />
+      ) : estado === 'elegida' ? (
+        <Check size={14} aria-hidden="true" />
+      ) : esRuedas ? (
+        <Accessibility size={16} aria-hidden="true" />
+      ) : (
+        butaca.numero
+      )}
+    </button>
+  )
+}
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-4 overflow-x-auto">
+// `butacas`, `ocupadas` (Set de ids) y `propias` (Set de ids) vienen tal
+// cual del plano real (GET .../plano). `seleccion` es un Set de ids
+// controlado por quien usa el componente (ElegirButacas.jsx) — acá solo se
+// decide SI se puede sumar una butaca más (tope en `cantidad`) y se avisa
+// si no, sin reemplazar nada en silencio.
+export default function MapaButacas({ butacas, ocupadas, propias, seleccion, cantidad, onToggle }) {
+  const [avisoLimite, setAvisoLimite] = useState(false)
+
+  if (butacas.length === 0) return null
+
+  const colMin = Math.min(...butacas.map((b) => b.col))
+  const filaOrdenes = [...new Set(butacas.map((b) => b.fila_orden))].sort((a, b) => a - b)
+  const filaPorOrden = new Map(butacas.map((b) => [b.fila_orden, b.fila]))
+  const columnas = Math.max(...butacas.map((b) => b.col)) - colMin + 1
+
+  function manejarClick(butaca, estado) {
+    if (estado === 'ocupada') return
+    if (estado === 'libre' || estado === 'propia') {
+      if (seleccion.size >= cantidad) {
+        setAvisoLimite(true)
+        return
+      }
+    }
+    setAvisoLimite(false)
+    onToggle(butaca.id)
+  }
+
+  const hayPropias = propias.size > 0
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-3 overflow-x-auto">
+        <div
+          className="grid gap-1.5 w-fit"
+          style={{
+            gridTemplateColumns: `auto repeat(${columnas}, ${TAMANO_BUTACA}px)`,
+            gridTemplateRows: `auto repeat(${filaOrdenes.length}, ${TAMANO_BUTACA}px)`,
+          }}
+        >
           <div
-            className="grid gap-y-1.5 gap-x-1.5 w-fit"
-            style={{ gridTemplateColumns: 'repeat(24, 24px)' }}
+            style={{ gridColumn: `1 / -1`, gridRow: 1 }}
+            className="bg-primary-light/50 rounded-xl py-2.5 mb-1 overflow-hidden"
           >
-            {celdas}
+            {/* El texto va sticky adentro de la barra, pegado a la
+                izquierda (no centrado en todo el grid): el grid puede ser
+                más ancho que la pantalla, y centrado en el ancho total el
+                texto quedaba scrolleado fuera de vista la mayor parte del
+                tiempo. */}
+            <p className="sticky left-2 inline-block text-xs font-semibold text-primary">
+              Escenario
+            </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-4 text-xs text-gray-400 justify-center">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-primary-light" />
-            Libre
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-primary" />
-            Seleccionada
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-gray-100" />
-            Ocupada
-          </span>
+          {filaOrdenes.map((fo, i) => (
+            <span
+              key={`etiqueta-${fo}`}
+              style={{ gridColumn: 1, gridRow: i + 2 }}
+              className="sticky left-0 z-10 bg-white flex items-center justify-center text-xs font-medium text-gray-400 pr-1"
+            >
+              {filaPorOrden.get(fo)}
+            </span>
+          ))}
+
+          {butacas.map((butaca) => {
+            const fila = filaOrdenes.indexOf(butaca.fila_orden) + 2
+            const col = butaca.col - colMin + 2
+            const estado = estadoDeButaca(butaca, { ocupadas, seleccion, propias })
+            return (
+              <Butaca
+                key={butaca.id}
+                butaca={{ ...butaca, _fila: fila, _col: col }}
+                estado={estado}
+                onClick={() => manejarClick(butaca, estado)}
+              />
+            )
+          })}
         </div>
       </div>
 
-      <div className="sticky bottom-0 border-t border-gray-100 bg-white p-4 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-gray-400">
-            {todaLaSeleccion.length} {todaLaSeleccion.length === 1 ? 'butaca' : 'butacas'}
-          </p>
-          <p className="text-base font-bold text-gray-800 truncate">{formatMoneda(total)}</p>
-        </div>
-        <Button variant="primary" disabled={todaLaSeleccion.length === 0} onClick={continuar} className="shrink-0">
-          Continuar
-        </Button>
+      {avisoLimite && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2">
+          Ya elegiste {cantidad === 1 ? '1 butaca' : `${cantidad} butacas`}; soltá una para elegir otra.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 justify-center">
+        <span className="flex items-center gap-1.5">
+          <span className="w-4 h-4 rounded border border-gray-200 bg-white" />
+          Libre
+        </span>
+        <span className="flex items-center gap-1.5">
+          <X size={12} className="text-gray-300" />
+          Ocupada
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Check size={12} className="text-primary" />
+          Elegida
+        </span>
+        {hayPropias && (
+          <span className="flex items-center gap-1.5">
+            <span className="w-4 h-4 rounded border-2 border-blue-400 bg-blue-50" />
+            Tuya
+          </span>
+        )}
+        <span className="flex items-center gap-1.5">
+          <Accessibility size={14} className="text-sky-500" />
+          Lugar para silla de ruedas
+        </span>
       </div>
     </div>
   )

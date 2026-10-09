@@ -247,11 +247,54 @@ export async function marcarTodasLeidas() {
 // de responder), cargos: [{numero, fecha_vencimiento, estado, importe}],
 // entradas: [{numero, codigo, butaca: {fila, numero} | null, usada}]
 // (vacío si la compra todavía no está PAGADA — las entradas se emiten
-// recién ahí), puede_elegir_butacas, motivo_bloqueo. No va alumno_id en la
-// URL: es de toda la familia, no de una hija puntual (confirmado leyendo
+// recién ahí), puede_elegir_butacas, motivo_bloqueo, puede_cambiar_butacas,
+// cambios_restantes (0 o 1), motivo_cambio. No va alumno_id en la URL: es
+// de toda la familia, no de una hija puntual (confirmado leyendo
 // portal_service.entradas()).
 export async function getEntradas() {
   return fetchConToken(`${API_URL}/api/v1/portal/entradas`)
+}
+
+// PlanoDeLaCompra: { sala_nombre, butacas: [{id, fila, numero, tipo:
+// "butaca"|"silla_ruedas", fila_orden, col}], ocupadas: uuid[] (de otras
+// compras de esta función, nunca de quién), propias: uuid[] (las de esta
+// compra, para "modo cambiar") }. fila_orden: de adelante hacia atrás
+// (0 = la más cercana al escenario, confirmado en el docstring del
+// backend). col: izquierda a derecha, con huecos a propósito = pasillos.
+// cache: 'no-store' a propósito: nada de caché HTTP acá (ni del service
+// worker — vite.config.js no tiene runtimeCaching, solo precachea el app
+// shell — ni del navegador). Un plano viejo mostraría libre una butaca que
+// otra familia ya confirmó: sin reserva temporal, es el único dato donde
+// un segundo de desactualización manda a alguien a elegir algo imposible.
+export async function getPlano(compraId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas/${compraId}/plano`, { cache: 'no-store' })
+}
+
+// Devuelve la compra ya con las butacas puestas (mismo shape que un item
+// de getEntradas()) — no hace falta un segundo pedido para refrescarla,
+// aunque igual se llama a useEntradas().recargar() para que la lista
+// completa quede consistente. Sin reserva temporal: gana quien confirma
+// primero (ERR_BUTACA_OCUPADA si otra familia se adelantó).
+export async function elegirButacas(compraId, butacaIds) {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas/${compraId}/butacas`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ butaca_ids: butacaIds }),
+  })
+}
+
+// Igual que elegirButacas() pero con el límite de un cambio por compra
+// (ERR_CAMBIO_BUTACAS_AGOTADO al segundo intento) — el backend no exime el
+// cambio aunque se pidan las mismas butacas que ya tenía, así que evitar
+// ese caso es responsabilidad de la UI (botón "Confirmar" deshabilitado si
+// la selección es idéntica a la actual). Devuelve la compra actualizada
+// más `aviso` (texto del backend sobre que el QR no cambia).
+export async function cambiarButacas(compraId, butacaIds) {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas/${compraId}/cambio-butacas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ butaca_ids: butacaIds }),
+  })
 }
 
 // Pública a propósito: nadie que escanea un QR en la puerta tiene sesión

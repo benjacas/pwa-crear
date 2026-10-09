@@ -12,7 +12,9 @@ import { useMisEntradas } from '../../hooks/useMisEntradas'
 const RUTAS_CON_VOLVER = ['/perfil', '/notificaciones', '/horarios', '/mis-entradas', '/vestuario']
 
 function tieneVolver(pathname) {
-  return RUTAS_CON_VOLVER.includes(pathname) || pathname.startsWith('/eventos')
+  // /mis-entradas/:compraId/butacas: ruta con parámetro, no entra en la
+  // lista de arriba (son todas exactas) — mismo criterio que /eventos.
+  return RUTAS_CON_VOLVER.includes(pathname) || pathname.startsWith('/eventos') || pathname.startsWith('/mis-entradas/')
 }
 
 export default function Shell() {
