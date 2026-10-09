@@ -3763,6 +3763,40 @@ Pago online de entradas y devoluciones quedan para después.
   kB después de la limpieza de la Tarea R.1 (+2.47 kB neto sobre el
   inicio de esta tarea, gzip 89.64 kB → 90.76 kB).
 
+### Tarea R.1 — Limpieza del flujo mock de compra (commit aparte)
+
+Borrado, confirmado antes con `git grep` que nada más los importaba:
+`EventoButacas.jsx`, `ResumenCompra.jsx`, `VestuarioEvento.jsx`,
+`hooks/useEvento.js` (singular — no confundir con `useEventos.js`,
+plural, que sigue en pie y es real), sus 3 rutas en `App.jsx`
+(`eventos/:id/butacas`, `eventos/:id/resumen`, `eventos/:id/vestuario`)
+y `butacasOcupadasDemo` de `mock/fixtures.js` (era el único fixture que
+quedaba sin ningún importador después de borrar `useEvento.js`).
+
+**Lo que NO se tocó, a propósito, y por qué**: `hooks/useMisEntradas.js`
+y `hooks/useVestuarioEvento.js` no estaban en la lista del pedido, y
+`git grep` los sigue encontrando importados — `useMisEntradas.js` por
+`Shell.jsx` (lo instancia y lo pasa por `Outlet context` como
+`misEntradasApi`) y `useVestuarioEvento.js` por `VestuarioEvento.jsx`...
+que ya no existe. Ahí está la trampa: **después de este borrado, ningún
+componente alcanzable desde una ruta real consume `misEntradasApi`**
+(`ResumenCompra.jsx`, que ya no existe, era el único que lo leía vía
+`useOutletContext()`) — pero como `Shell.jsx` sigue llamando a
+`useMisEntradas()` y pasándolo igual, un `git grep` literal todavía
+"encuentra" el hook en uso. Mismo caso con `eventosDemo` y
+`misEntradasDemo` de `fixtures.js` (las sigue importando
+`useMisEntradas.js`) y `vestuarioPorEventoDemo` (la sigue importando
+`useVestuarioEvento.js`): no se borraron porque borrarlas rompería
+esos dos hooks, que técnicamente siguen "en uso" aunque nada los llame
+en los hechos. Es exactamente el caso que el pedido anticipaba
+("si algo todavía los usa, no lo toques y avisame") — queda avisado
+acá: **`useMisEntradas.js`, `useVestuarioEvento.js`, la instancia de
+`useMisEntradas()` en `Shell.jsx` y tres fixtures de `mock/fixtures.js`
+(`eventosDemo`, `misEntradasDemo`, `vestuarioPorEventoDemo`) quedaron
+huérfanos de verdad** (nada alcanzable desde una ruta los necesita),
+pero sacarlos es una decisión aparte — tocan `Shell.jsx`, que está
+fuera del alcance de esta tarea.
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en

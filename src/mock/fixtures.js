@@ -74,10 +74,6 @@ export const eventosDemo = [
   },
 ]
 
-export const butacasOcupadasDemo = {
-  ev1: ['A-3', 'B-7', 'C-2', 'C-3', 'D-5', 'E-8', 'E-9', 'F-1'],
-}
-
 export const misEntradasDemo = [
   {
     id: 'ent1', eventoId: 'ev1', eventoTitulo: 'Gala Anual CREAR',

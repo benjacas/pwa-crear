@@ -17,11 +17,8 @@ import Perfil from './pages/Perfil'
 import Notificaciones from './pages/Notificaciones'
 import Eventos from './pages/Eventos'
 import EventoDetalle from './pages/EventoDetalle'
-import EventoButacas from './pages/EventoButacas'
-import ResumenCompra from './pages/ResumenCompra'
 import MisEntradas from './pages/MisEntradas'
 import ElegirButacas from './pages/ElegirButacas'
-import VestuarioEvento from './pages/VestuarioEvento'
 import Vestuario from './pages/Vestuario'
 import EntradaPublica from './pages/EntradaPublica'
 
@@ -57,9 +54,6 @@ export default function App() {
                 <Route path="notificaciones" element={<Notificaciones />} />
                 <Route path="eventos" element={<Eventos />} />
                 <Route path="eventos/:id" element={<EventoDetalle />} />
-                <Route path="eventos/:id/butacas" element={<EventoButacas />} />
-                <Route path="eventos/:id/resumen" element={<ResumenCompra />} />
-                <Route path="eventos/:id/vestuario" element={<VestuarioEvento />} />
                 <Route path="mis-entradas" element={<MisEntradas />} />
                 <Route path="mis-entradas/:compraId/butacas" element={<ElegirButacas />} />
                 <Route path="vestuario" element={<Vestuario />} />

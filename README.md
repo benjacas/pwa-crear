@@ -101,7 +101,7 @@ src/
 ├── pages/            # una página por ruta
 ├── routes/           # RequireRole: el guard de sesión/rol
 ├── utils/            # format.js: toda la lógica de "cómo se muestra un dato"
-└── mock/             # fixtures.js: solo el flujo viejo de butacas y entradas (sin ruta ni enlace; queda como referencia de diseño)
+└── mock/             # fixtures.js: `proximoEventoDemo` lo usa Home.jsx de verdad; el resto (eventos/entradas/vestuario del flujo viejo de compra) quedó sin ninguna ruta que lo use desde que se borraron EventoButacas/ResumenCompra/VestuarioEvento — no se tocó porque useMisEntradas.js y useVestuarioEvento.js todavía los importan, aunque nada los llame a ellos tampoco
 ```
 
 ## Qué está conectado a datos reales y qué no
