@@ -101,7 +101,7 @@ src/
 ├── pages/            # una página por ruta
 ├── routes/           # RequireRole: el guard de sesión/rol
 ├── utils/            # format.js: toda la lógica de "cómo se muestra un dato"
-└── mock/             # fixtures.js: solo el flujo viejo de butacas y entradas (sin ruta ni enlace; queda como referencia de diseño)
+└── mock/             # fixtures.js: `proximoEventoDemo` lo usa Home.jsx de verdad; el resto (eventos/entradas/vestuario del flujo viejo de compra) quedó sin ninguna ruta que lo use desde que se borraron EventoButacas/ResumenCompra/VestuarioEvento — no se tocó porque useMisEntradas.js y useVestuarioEvento.js todavía los importan, aunque nada los llame a ellos tampoco
 ```
 
 ## Qué está conectado a datos reales y qué no
@@ -119,7 +119,7 @@ src/
 | Eventos (cartelera y detalle) | ✅ Real, solo lectura |
 | Vestuario (cuotas y pagos, desde Eventos, con pago online) | ✅ Real |
 | Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
-| Entradas con butacas | 🟡 Parcial: mis entradas con QR ✅; elegir y cambiar butacas, pago online y devoluciones ⬜ |
+| Entradas con butacas | 🟡 Parcial: Mis entradas, elegir y cambiar butacas ✅; pago online y devoluciones ⬜ |
 | Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅, vestuario ✅; matrícula y entradas todavía pagan solo en mostrador |
 
 ## Convenciones a respetar

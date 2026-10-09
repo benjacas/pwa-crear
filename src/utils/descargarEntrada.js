@@ -1,5 +1,12 @@
-import { formatFecha, formatHora } from './format'
+import { formatFecha, formatHora, hoyLocalISO } from './format'
 import { dibujarQR, urlEntrada } from './qr'
+
+// dd/mm/aaaa a partir de hoyLocalISO() ('YYYY-MM-DD'): reordenar el string
+// que ya está en hora local, nada de Date/toISOString de nuevo.
+function fechaDeHoyDDMMAAAA() {
+  const [anio, mes, dia] = hoyLocalISO().split('-')
+  return `${dia}/${mes}/${anio}`
+}
 
 // Nombre de archivo en minúsculas, sin tildes ni caracteres raros: saca los
 // diacríticos primero (normalize + regex, no un mapa de reemplazos a mano)
@@ -59,7 +66,9 @@ function calcularLayout(lineasTitulo, compra, entrada) {
   }
 
   posiciones.qr = y + 10
-  posiciones.alto = posiciones.qr + TAMANO_QR + 60
+  posiciones.pie1 = posiciones.qr + TAMANO_QR + 40
+  posiciones.pie2 = posiciones.pie1 + 22
+  posiciones.alto = posiciones.pie2 + 30
   return posiciones
 }
 
@@ -106,6 +115,12 @@ export async function descargarEntradaPng(compra, entrada) {
   }
 
   dibujarQR(ctx, urlEntrada(entrada.codigo), (ANCHO - TAMANO_QR) / 2, pos.qr, TAMANO_QR)
+
+  ctx.textAlign = 'center'
+  ctx.font = '13px sans-serif'
+  ctx.fillStyle = '#9ca3af'
+  ctx.fillText(`Descargada el ${fechaDeHoyDDMMAAAA()}`, ANCHO / 2, pos.pie1)
+  ctx.fillText('La butaca vigente figura al escanear el QR', ANCHO / 2, pos.pie2)
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
   const url = URL.createObjectURL(blob)

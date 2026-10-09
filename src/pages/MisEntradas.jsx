@@ -1,4 +1,5 @@
-import { Ticket, CheckCircle2, Download } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Ticket, CheckCircle2, Download, Armchair } from 'lucide-react'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
@@ -7,7 +8,7 @@ import QRCode from '../components/QRCode'
 import { useEntradas } from '../hooks/useEntradas'
 import { descargarEntradaPng } from '../utils/descargarEntrada'
 import { urlEntrada } from '../utils/qr'
-import { formatFecha, formatHora, formatMoneda, hoyLocalISO } from '../utils/format'
+import { formatFecha, formatHora, formatMoneda, hoyLocalISO, motivoButacas } from '../utils/format'
 
 const ESTADOS_COMPRA = {
   PENDIENTE: { label: 'Pendiente de pago', color: 'yellow' },
@@ -79,6 +80,39 @@ function FilaEntrada({ compra, entrada }) {
   )
 }
 
+function AccionButacas({ compra }) {
+  const navigate = useNavigate()
+  const irAElegir = () => navigate(`/mis-entradas/${compra.id}/butacas`)
+
+  if (compra.puede_elegir_butacas) {
+    return (
+      <Button variant="primary" className="w-full justify-center" onClick={irAElegir}>
+        <Armchair size={16} />
+        Elegir butacas
+      </Button>
+    )
+  }
+
+  if (compra.puede_cambiar_butacas) {
+    return (
+      <div className="space-y-1.5">
+        <Button variant="secondary" className="w-full justify-center" onClick={irAElegir}>
+          <Armchair size={16} />
+          Cambiar butacas
+        </Button>
+        {compra.cambios_restantes > 0 && (
+          <p className="text-xs text-gray-400 text-center">
+            Te queda {compra.cambios_restantes} cambio de butacas.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  const motivo = motivoButacas(compra)
+  return motivo ? <p className="text-xs text-gray-400">{motivo}</p> : null
+}
+
 function TarjetaCompra({ compra }) {
   const { label: labelCompra, color: colorCompra } = infoEstadoCompra(compra.estado)
 
@@ -136,6 +170,8 @@ function TarjetaCompra({ compra }) {
           </div>
         </div>
       )}
+
+      <AccionButacas compra={compra} />
     </div>
   )
 }

@@ -470,6 +470,21 @@ export function formatButacaCorta(b) {
   return `${b.fila}-${b.numero}`
 }
 
+// El motivo que vale la pena mostrarle a la familia sobre elegir/cambiar
+// butacas: con butacas ya puestas, `motivo_cambio` es el que explica la
+// situación real (cambio agotado, entrada usada, función pasada —
+// `motivo_bloqueo` ahí solo diría "ya tiene sus butacas", cierto pero no
+// dice nada nuevo); sin butacas todavía, al revés (`motivo_bloqueo` explica
+// por qué: sin pagar, familia con deuda — `motivo_cambio` solo diría
+// "todavía no tiene butacas"). Usado por MisEntradas.jsx y
+// ElegirButacas.jsx — que coincidan es a propósito, no una casualidad.
+export function motivoButacas(compra) {
+  const tieneButacas = compra.entradas.some((e) => e.butaca)
+  return tieneButacas
+    ? (compra.motivo_cambio || compra.motivo_bloqueo)
+    : (compra.motivo_bloqueo || compra.motivo_cambio)
+}
+
 export function infoEstadoPago(estado) {
   const map = {
     pendiente: { label: 'Pendiente de pago', classes: 'bg-gray-100 text-gray-600' },

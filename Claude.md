@@ -3592,6 +3592,211 @@ de eso se tocó.
     propio). Si hace falta una garantía más fuerte, escanearlo con el
     celular es la prueba que falta.
 
+## Tarea R — Elegir y cambiar butacas (reemplaza el flujo mock de compra)
+
+**Spec**: segunda fase del módulo de entradas — elegir butacas de una
+compra ya paga (`PUT /portal/entradas/{id}/butacas`) y cambiarlas una vez
+(`POST /portal/entradas/{id}/cambio-butacas`), con el plano real de la
+sala (`GET /portal/entradas/{id}/plano`). Backend en `main`, ya mergeado.
+Pago online de entradas y devoluciones quedan para después.
+
+- **Paso 0, backend (solo lectura)**: `ButacaDelPlano.fila_orden` es "de
+  adelante hacia atrás, como se definió la sala" (docstring propio del
+  backend) — confirmado con la sala real de la demo (Teatro la Brújula,
+  190 butacas): fila A es `fila_orden 0` con el mayor ancho (20 asientos),
+  achicándose hacia atrás hasta `SR` (silla de ruedas) en el fondo,
+  `fila_orden 11`. `col` va de -11 a 11, con -8/0/8 siempre vacíos
+  (pasillos) — esa orientación (escenario arriba, `fila_orden`
+  creciendo hacia abajo) tiene sentido con esos datos reales, no hizo
+  falta avisar nada raro. `ocupadas`/`propias` son arrays de UUID de
+  butaca (`ButacaDelPlano.id`), no de fila+número.
+  - `PUT /butacas` devuelve la compra ya actualizada, mismo shape que un
+    ítem de `GET /portal/entradas` (`CompraEntradasDeLaFamilia`).
+    `POST /cambio-butacas` devuelve lo mismo más `aviso: str` (el texto
+    del backend sobre que el QR no cambia) — no se usó ese `aviso`
+    directo en ningún lado: los textos que pedía el spec para la hoja ya
+    estaban escritos a mano, y coinciden en el fondo.
+  - Códigos de error reales (confirmados leyendo
+    `compras_entradas_service.py` y los tests, no asumidos):
+    `ERR_COMPRA_SIN_PAGAR`, `ERR_YA_TIENE_BUTACAS`,
+    `ERR_FAMILIA_CON_DEUDA`, `ERR_BUTACA_OCUPADA`,
+    `ERR_SIN_BUTACAS` (cambiar sin haber elegido antes),
+    `ERR_ENTRADA_USADA`, `ERR_EVENTO_PASADO`,
+    `ERR_CAMBIO_BUTACAS_AGOTADO` — todos **409** (el default de `_error()`
+    en ese archivo). `ERR_BUTACA_REPETIDA`, `ERR_CANTIDAD_BUTACAS`,
+    `ERR_BUTACA_AJENA`, `ERR_SIN_FUNCION` son **422** (los únicos que
+    pisan el default).
+  - **Pedir cambiar a las mismas butacas que ya tiene SÍ gasta el
+    cambio** — confirmado leyendo `cambiar_butacas`/
+    `cambiar_butacas_portal`: no hay ningún chequeo de "¿es igual a lo
+    que ya tenía?" en ningún lado del backend, `cambios_butacas_portal`
+    se incrementa siempre que la llamada no tire error. Por eso el botón
+    "Confirmar" se deshabilita del lado del front cuando la selección es
+    idéntica a la actual en modo cambiar (item 4 del pedido) — es la
+    única protección que existe contra desperdiciar el único cambio.
+- **`api/client.js`**: `getPlano(compraId)` con `cache: 'no-store'` a
+  propósito — sin reserva temporal del lado del backend, un plano
+  cacheado mostraría libre una butaca que otra familia ya confirmó.
+  Confirmado que nada más cachea esto: `vite.config.js` no tiene
+  `runtimeCaching` (el service worker solo precachea el app shell,
+  `navigateFallbackDenylist` ya excluía `/api/`). `elegirButacas` y
+  `cambiarButacas` mandan `{butaca_ids: [...]}`.
+- **`hooks/usePlano.js`**: mismo patrón que los demás hooks de este
+  repo (`cargando`/`error`/`recargar`), más un `visibilitychange` que
+  vuelve a pedir el plano al volver a la pestaña — es la única defensa
+  real contra elegir algo que se vendió mientras la familia miraba otra
+  cosa (no hay reserva temporal).
+- **`components/MapaButacas.jsx` reescrito por completo** (ver Tarea R.1
+  más abajo por qué no se podía dejar el de antes funcionando para los
+  dos flujos a la vez). Grilla CSS con `fila_orden`→fila,
+  `col - colMin`→columna (los huecos de `col` quedan como huecos reales
+  en el grid, son los pasillos). Barra "Escenario" en la fila 1, antes
+  de `fila_orden 0`. Etiqueta de fila y el texto de "Escenario" van
+  `position: sticky; left` adentro del contenedor con scroll horizontal
+  — **bug encontrado y corregido durante la prueba manual**: centrar el
+  texto "Escenario" en todo el ancho del grid (190 butacas, bastante
+  más ancho que la pantalla) lo dejaba centrado fuera de la parte
+  visible la mayor parte del tiempo; se cambió a sticky pegado a la
+  izquierda, visible todo el tiempo sin importar el scroll.
+  - Botón de 32px (`TAMANO_BUTACA`), sin tocar el viewport del `<meta>`
+    (seguía sin `maximum-scale`, confirmado antes de tocar nada — no
+    hacía falta cambiarlo). Estados por texto/ícono, nunca solo color:
+    ocupada (`X`, deshabilitada), elegida (`Check`), tuya (borde azul
+    distinto, sin ícono propio — la diferencia con "elegida" ya es
+    clara por el texto del `aria-label` y la leyenda), silla de ruedas
+    (ícono `Accessibility` adentro del botón + "Lugar para silla de
+    ruedas" en el `aria-label` y en la leyenda). `aria-pressed` solo en
+    "elegida" (no en "tuya": no es parte de la selección nueva todavía,
+    hay que tocarla para que cuente). El tope de `cantidad` se
+    chequea acá adentro (no en quien usa el componente): tocar una
+    libre de más no llama a `onToggle`, solo muestra el aviso.
+- **`pages/ElegirButacas.jsx`** (nueva, `/mis-entradas/:compraId/butacas`,
+  dentro de Shell/RequireRole — agregada a `Shell.jsx` con
+  `pathname.startsWith('/mis-entradas/')`, mismo criterio que
+  `/eventos`, porque la ruta lleva un parámetro y no entra en la lista
+  de rutas exactas). La compra sale de `useEntradas()` buscando por
+  `id` (no hay un `GET` de una sola compra) — si no está en la lista,
+  "No encontramos esta compra" cubre los dos casos (no existe, o es de
+  otra familia) sin distinguir cuál, a propósito. `modo` sale de
+  `puede_elegir_butacas`/`puede_cambiar_butacas` tal cual vienen del
+  backend, nunca se recalcula del lado del front.
+  - Selección empieza vacía en los dos modos (ni en "cambiar" arranca
+    con las butacas actuales pre-marcadas) — se leyó el pedido como
+    "se pueden volver a elegir", no "ya están elegidas": arrancar vacío
+    evita que el botón "Confirmar" quede deshabilitado de entrada en
+    modo cambiar sin que la familia haya tocado nada.
+  - Mapeo de errores: `ERR_BUTACA_OCUPADA` recarga el plano, saca de la
+    selección las que ahora aparecen en `ocupadas`, conserva el resto,
+    cierra la hoja y avisa — se queda en la pantalla. `ERR_YA_TIENE_BUTACAS`
+    recarga `useEntradas()` y vuelve. `ERR_FAMILIA_CON_DEUDA`,
+    `ERR_COMPRA_SIN_PAGAR`, `ERR_ENTRADA_USADA`, `ERR_EVENTO_PASADO`,
+    `ERR_CAMBIO_BUTACAS_AGOTADO` muestran el `mensaje` tal cual del
+    backend y vuelven. 422 (cualquiera de los cuatro códigos de
+    validación) recarga el plano con un mensaje genérico, sin volver.
+    Sin `.status` en el error (falla de red real, no HTTP) no se toca
+    nada: la hoja queda abierta, la selección intacta, botón
+    "Reintentar". El botón de la hoja queda deshabilitado mientras la
+    petición está en vuelo (`enVuelo`) en los dos modos.
+  - "Nunca marcar nada como hecho sin una respuesta 200": el único
+    lugar que navega a Mis entradas o cierra la hoja como éxito es el
+    `try` que sigue al `await elegirButacas/cambiarButacas` — cualquier
+    excepción (que `fetchConToken` tira siempre que `!res.ok`) cae al
+    `catch` antes de llegar ahí.
+- **`motivoButacas(compra)`** (nuevo, en `utils/format.js`, compartido
+  por `MisEntradas.jsx` y `ElegirButacas.jsx`): **bug encontrado y
+  corregido durante la prueba manual real** (no simulada — pasó con la
+  compra real de la familia de prueba después de agotar su cambio de
+  verdad). La primera versión mostraba `motivo_bloqueo || motivo_cambio`
+  siempre, así que con butacas ya puestas y el cambio agotado se veía
+  "Ya tiene sus butacas asignadas" (cierto, pero inútil) en vez de
+  "Ya usaste tu cambio de butacas para esta compra" (lo que de verdad
+  importa en ese momento). La regla quedó: con butacas puestas,
+  `motivo_cambio` primero; sin butacas, `motivo_bloqueo` primero —
+  apareció en dos archivos con el mismo bug, así que se sacó a una
+  función compartida en vez de arreglarlo dos veces por separado.
+- **`MisEntradas.jsx`**: `AccionButacas` — botón "Elegir butacas" (si
+  `puede_elegir_butacas`), "Cambiar butacas" + "Te queda N cambio de
+  butacas" (si `puede_cambiar_butacas`, `cambios_restantes` real del
+  backend, nunca hardcodeado en 1), o el motivo en texto plano si
+  ninguno. Nada de esto depende de `compra.estado`: los flags ya vienen
+  calculados bien para cualquier estado desde el backend.
+- **`utils/descargarEntrada.js`**: dos líneas nuevas al pie de la
+  imagen, "Descargada el dd/mm/aaaa" (armado con `hoyLocalISO().split
+  ('-')` reordenado, nada de `Date`/`toISOString` de nuevo) y "La
+  butaca vigente figura al escanear el QR" — la butaca que se dibuja en
+  la imagen es la de cuando se descarga, pero si después se cambia, el
+  PNG viejo queda desactualizado (el QR no cambia, solo la butaca
+  asociada) y esto lo deja dicho en la propia imagen.
+- **Verificado contra el backend real** (`main` de `crear-backend`,
+  contraseña demo vigente dada por el usuario, nada generado por mí,
+  no se corrió `demo cargar`/`demo borrar`) con Playwright headless,
+  **de punta a punta y con la compra real de la familia de prueba**
+  (no una simulada): plano cargado (190 butacas reales, grilla
+  correcta), elegir 2 butacas, tope de cantidad avisando sin
+  reemplazar, hoja de confirmación con el resumen agrupado por fila,
+  confirmar → el QR aparece en Mis entradas con la butaca elegida de
+  verdad, botón pasa a "Cambiar butacas" con "Te queda 1 cambio de
+  butacas", modo cambiar mostrando las butacas actuales como "tuya",
+  botón deshabilitado al re-elegir exactamente las mismas, cambiar a
+  butacas distintas de verdad, y después del cambio: ya no ofrece
+  cambiar de nuevo (ni el botón en Mis entradas ni entrando directo a
+  la URL), con el motivo correcto. Descarga de la entrada real con el
+  pie nuevo (fecha de hoy real, PNG real). `npm run lint` y
+  `npm run build` limpios en cada paso.
+  - **Simulado** (interceptando las respuestas de `PUT /butacas`, ya
+    que forzar estos casos en vivo requeriría dos familias
+    compitiendo por la misma butaca en paralelo o un evento ya pasado
+    de verdad): `ERR_BUTACA_OCUPADA` (confirmado que saca solo la
+    butaca afectada de la selección, conserva el resto, se queda en la
+    pantalla), sin conexión (`route.abort`, confirmado que la hoja
+    sigue abierta con la selección intacta y botón "Reintentar"), 422
+    genérico, y uno de los códigos que vuelven a Mis entradas
+    (`ERR_EVENTO_PASADO`) y `ERR_YA_TIENE_BUTACAS`. Un primer intento
+    de simular `ERR_BUTACA_OCUPADA` dio un falso negativo por un bug
+    en el propio script de prueba (un `page.route` registrado después
+    del montaje inicial contaba mal cuál era "la primera llamada") —
+    no era un bug de la app, corregido en el script y vuelto a correr.
+  - **No verificado**: decodificar el QR con un lector real (mismo
+    límite que la Tarea Q, no hay herramienta de decodificación en
+    este entorno).
+- **Bundle**: 294.64 kB → 301.76 kB con las butacas (+7.12 kB) → 297.11
+  kB después de la limpieza de la Tarea R.1 (+2.47 kB neto sobre el
+  inicio de esta tarea, gzip 89.64 kB → 90.76 kB).
+
+### Tarea R.1 — Limpieza del flujo mock de compra (commit aparte)
+
+Borrado, confirmado antes con `git grep` que nada más los importaba:
+`EventoButacas.jsx`, `ResumenCompra.jsx`, `VestuarioEvento.jsx`,
+`hooks/useEvento.js` (singular — no confundir con `useEventos.js`,
+plural, que sigue en pie y es real), sus 3 rutas en `App.jsx`
+(`eventos/:id/butacas`, `eventos/:id/resumen`, `eventos/:id/vestuario`)
+y `butacasOcupadasDemo` de `mock/fixtures.js` (era el único fixture que
+quedaba sin ningún importador después de borrar `useEvento.js`).
+
+**Lo que NO se tocó, a propósito, y por qué**: `hooks/useMisEntradas.js`
+y `hooks/useVestuarioEvento.js` no estaban en la lista del pedido, y
+`git grep` los sigue encontrando importados — `useMisEntradas.js` por
+`Shell.jsx` (lo instancia y lo pasa por `Outlet context` como
+`misEntradasApi`) y `useVestuarioEvento.js` por `VestuarioEvento.jsx`...
+que ya no existe. Ahí está la trampa: **después de este borrado, ningún
+componente alcanzable desde una ruta real consume `misEntradasApi`**
+(`ResumenCompra.jsx`, que ya no existe, era el único que lo leía vía
+`useOutletContext()`) — pero como `Shell.jsx` sigue llamando a
+`useMisEntradas()` y pasándolo igual, un `git grep` literal todavía
+"encuentra" el hook en uso. Mismo caso con `eventosDemo` y
+`misEntradasDemo` de `fixtures.js` (las sigue importando
+`useMisEntradas.js`) y `vestuarioPorEventoDemo` (la sigue importando
+`useVestuarioEvento.js`): no se borraron porque borrarlas rompería
+esos dos hooks, que técnicamente siguen "en uso" aunque nada los llame
+en los hechos. Es exactamente el caso que el pedido anticipaba
+("si algo todavía los usa, no lo toques y avisame") — queda avisado
+acá: **`useMisEntradas.js`, `useVestuarioEvento.js`, la instancia de
+`useMisEntradas()` en `Shell.jsx` y tres fixtures de `mock/fixtures.js`
+(`eventosDemo`, `misEntradasDemo`, `vestuarioPorEventoDemo`) quedaron
+huérfanos de verdad** (nada alcanzable desde una ruta los necesita),
+pero sacarlos es una decisión aparte — tocan `Shell.jsx`, que está
+fuera del alcance de esta tarea.
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en
