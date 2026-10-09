@@ -2,6 +2,21 @@ import { useContext, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AuthContext } from '../context/AuthContext'
 
+// Sin `.status` (fetch() tiró antes de llegar a una respuesta — sin
+// conexión, CORS, DNS) o 5xx: no tiene nada que ver con la contraseña, así
+// que mostrar "credenciales incorrectas" ahí sería directamente falso.
+// Antes cualquier error cerraba acá, sin mirar cuál era.
+function mensajeErrorLogin(err) {
+  if (!err.status || err.status >= 500) {
+    return 'No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.'
+  }
+  if (err.status === 401) return 'Email o contraseña incorrectos.'
+  // El mensaje real del backend trae cuántos minutos faltan — mejor que
+  // cualquier texto fijo de acá.
+  if (err.status === 429) return err.message || 'Probaste muchas veces seguidas: esperá unos minutos antes de volver a intentar.'
+  return err.message || 'No pudimos iniciar sesión. Intentá de nuevo.'
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { login, loginConCodigo } = useContext(AuthContext)
@@ -34,8 +49,8 @@ export default function Login() {
       } else {
         irSegunResultado(resultado)
       }
-    } catch {
-      setError('Credenciales incorrectas. Verificá tu email y contraseña.')
+    } catch (err) {
+      setError(mensajeErrorLogin(err))
       setLoading(false)
     }
   }
