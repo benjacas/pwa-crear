@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { PartyPopper, Shirt, ChevronRight } from 'lucide-react'
+import { PartyPopper, Shirt, Ticket, ChevronRight } from 'lucide-react'
 import Skeleton from '../components/ui/Skeleton'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
@@ -22,23 +22,40 @@ export default function Eventos() {
     <div className="p-4 space-y-4">
       <h1 className="text-xl font-bold text-gray-800">Eventos</h1>
 
-      {/* No se puede filtrar vestuario por evento (es de la alumna en
-          general, no de un evento puntual) — por eso vive acá, como
-          sección aparte de la cartelera, y no adentro de EventoDetalle.jsx:
-          ponerlo ahí insinuaría un vínculo con ese evento que no existe. */}
-      <Link
-        to="/vestuario"
-        className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-card p-4 hover:shadow-card-md transition-shadow"
-      >
-        <div className="p-2.5 rounded-xl bg-primary-light text-primary shrink-0">
-          <Shirt size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-800">Vestuario</p>
-          <p className="text-xs text-gray-400">Cuotas y pagos de disfraces/trajes</p>
-        </div>
-        <ChevronRight size={16} className="text-gray-300 shrink-0" />
-      </Link>
+      {/* Ni vestuario ni mis entradas se pueden filtrar por evento (son de
+          la familia en general, no de un evento puntual) — por eso viven
+          acá, como secciones aparte de la cartelera, y no adentro de
+          EventoDetalle.jsx: ponerlas ahí insinuaría un vínculo con ese
+          evento que no existe. */}
+      <div className="space-y-3">
+        <Link
+          to="/mis-entradas"
+          className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-card p-4 hover:shadow-card-md transition-shadow"
+        >
+          <div className="p-2.5 rounded-xl bg-primary-light text-primary shrink-0">
+            <Ticket size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-800">Mis entradas</p>
+            <p className="text-xs text-gray-400">Entradas con QR de las funciones compradas</p>
+          </div>
+          <ChevronRight size={16} className="text-gray-300 shrink-0" />
+        </Link>
+
+        <Link
+          to="/vestuario"
+          className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 shadow-card p-4 hover:shadow-card-md transition-shadow"
+        >
+          <div className="p-2.5 rounded-xl bg-primary-light text-primary shrink-0">
+            <Shirt size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-800">Vestuario</p>
+            <p className="text-xs text-gray-400">Cuotas y pagos de disfraces/trajes</p>
+          </div>
+          <ChevronRight size={16} className="text-gray-300 shrink-0" />
+        </Link>
+      </div>
 
       {eventos.length === 0 ? (
         <EmptyState

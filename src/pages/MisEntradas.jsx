@@ -1,16 +1,147 @@
-import { useOutletContext } from 'react-router-dom'
-import { Ticket } from 'lucide-react'
+import { Ticket, CheckCircle2, Download } from 'lucide-react'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
 import Skeleton from '../components/ui/Skeleton'
-import { formatFecha, formatMoneda, formatButacaCorta, infoEstadoPago } from '../utils/format'
+import QRCode from '../components/QRCode'
+import { useEntradas } from '../hooks/useEntradas'
+import { descargarEntradaPng } from '../utils/descargarEntrada'
+import { urlEntrada } from '../utils/qr'
+import { formatFecha, formatHora, formatMoneda, hoyLocalISO } from '../utils/format'
 
-const COLOR_POR_ESTADO = { pendiente: 'gray', pago_en_revision: 'yellow', pagado: 'green' }
+const ESTADOS_COMPRA = {
+  PENDIENTE: { label: 'Pendiente de pago', color: 'yellow' },
+  PAGADA: { label: 'Pagada', color: 'green' },
+  // El backend filtra las compras ANULADA antes de que lleguen acá — nunca
+  // debería aparecer, pero se contempla el label por si el filtro cambia.
+  ANULADA: { label: 'Anulada', color: 'red' },
+}
+
+const ESTADOS_CARGO = {
+  PENDIENTE: { label: 'Pendiente', color: 'yellow' },
+  PAGADO: { label: 'Pagado', color: 'green' },
+}
+
+function infoEstadoCompra(estado) {
+  return ESTADOS_COMPRA[estado] ?? { label: estado, color: 'gray' }
+}
+
+function infoEstadoCargo(estado) {
+  return ESTADOS_CARGO[estado] ?? { label: estado, color: 'gray' }
+}
+
+function FilaEntrada({ compra, entrada }) {
+  const anulada = compra.estado === 'ANULADA'
+
+  if (entrada.usada) {
+    return (
+      <div className="flex items-center gap-2 p-3 rounded-xl bg-gray-50">
+        <CheckCircle2 size={16} className="text-gray-400 shrink-0" />
+        <p className="text-sm text-gray-500">Entrada {entrada.numero}: ya ingresó</p>
+      </div>
+    )
+  }
+
+  if (anulada) {
+    return (
+      <div className="p-3 rounded-xl bg-gray-50">
+        <p className="text-sm text-gray-500">Entrada {entrada.numero}: anulada</p>
+      </div>
+    )
+  }
+
+  if (!entrada.codigo || !entrada.butaca) {
+    return (
+      <div className="p-3 rounded-xl bg-amber-50">
+        <p className="text-sm text-amber-700">
+          Entrada {entrada.numero}: {compra.motivo_bloqueo ?? 'Todavía no se eligieron las butacas.'}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3 p-4 rounded-xl border border-gray-100">
+      <QRCode texto={urlEntrada(entrada.codigo)} tamano={160} />
+      <p className="text-sm font-semibold text-gray-800">
+        Fila {entrada.butaca.fila} · Butaca {entrada.butaca.numero}
+      </p>
+      <Button
+        variant="secondary"
+        size="sm"
+        className="w-full justify-center"
+        onClick={() => descargarEntradaPng(compra, entrada)}
+      >
+        <Download size={14} />
+        Descargar entrada
+      </Button>
+    </div>
+  )
+}
+
+function TarjetaCompra({ compra }) {
+  const { label: labelCompra, color: colorCompra } = infoEstadoCompra(compra.estado)
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 space-y-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-800 truncate">{compra.evento.nombre}</p>
+          {compra.funcion ? (
+            <p className="text-xs text-gray-400 mt-0.5">
+              {formatFecha(compra.funcion.fecha)}
+              {compra.funcion.hora ? ` · ${formatHora(compra.funcion.hora)} hs` : ''}
+              {' · '}{compra.funcion.sala_nombre}
+            </p>
+          ) : (
+            <p className="text-xs text-amber-600 mt-0.5">La academia todavía no te asignó una función.</p>
+          )}
+        </div>
+        <Badge color={colorCompra}>{labelCompra}</Badge>
+      </div>
+
+      {compra.cargos.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Cargos</h3>
+          <ul className="space-y-1">
+            {compra.cargos.map((cargo) => {
+              const { label, color } = infoEstadoCargo(cargo.estado)
+              return (
+                <li key={cargo.numero} className="flex items-center justify-between gap-2 py-1 text-sm">
+                  <div className="min-w-0">
+                    <span className="text-gray-700">Cuota {cargo.numero}</span>
+                    {cargo.fecha_vencimiento && (
+                      <span className="text-gray-400"> · vence {formatFecha(cargo.fecha_vencimiento, { conAnio: false })}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {cargo.importe != null && <span className="font-medium text-gray-800">{formatMoneda(cargo.importe)}</span>}
+                    <Badge color={color}>{label}</Badge>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="text-xs text-gray-400 mt-2">El pago se registra en la academia.</p>
+        </div>
+      )}
+
+      {compra.entradas.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Entradas</h3>
+          <div className="space-y-2">
+            {compra.entradas.map((entrada) => (
+              <FilaEntrada key={entrada.numero} compra={compra} entrada={entrada} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function MisEntradas() {
-  const { misEntradasApi } = useOutletContext()
-  const { entradas, cargando, marcarComoPagada } = misEntradasApi
+  const { compras, cargando, error } = useEntradas()
 
   if (cargando) {
     return (
@@ -21,52 +152,46 @@ export default function MisEntradas() {
     )
   }
 
+  if (error) {
+    return (
+      <EmptyState
+        icon={Ticket}
+        title="No pudimos cargar tus entradas"
+        description="Si ya descargaste tu entrada, mostrala desde la galería."
+      />
+    )
+  }
+
+  if (compras.length === 0) {
+    return (
+      <div className="p-4">
+        <h1 className="text-xl font-bold text-gray-800 mb-4">Mis entradas</h1>
+        <EmptyState icon={Ticket} title="Todavía no tenés entradas" description="Las compras que hagas van a aparecer acá." />
+      </div>
+    )
+  }
+
+  const hoy = hoyLocalISO()
+  const fechaDeCompra = (compra) => compra.funcion?.fecha ?? compra.evento.fecha
+  const proximas = compras.filter((c) => fechaDeCompra(c) >= hoy)
+  const pasadas = compras.filter((c) => fechaDeCompra(c) < hoy)
+
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-4 space-y-6">
       <h1 className="text-xl font-bold text-gray-800">Mis entradas</h1>
 
-      {entradas.length === 0 ? (
-        <EmptyState icon={Ticket} title="Todavía no tenés entradas" description="Las compras que hagas van a aparecer acá." />
-      ) : (
-        <ul className="space-y-3">
-          {entradas.map((entrada) => {
-            const { label } = infoEstadoPago(entrada.estado)
-            return (
-              <li key={entrada.id} className="bg-white rounded-2xl border border-gray-100 shadow-card p-4 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 truncate">{entrada.eventoTitulo}</p>
-                    <p className="text-xs text-gray-400">
-                      {formatFecha(entrada.fecha)} · {entrada.lugar}
-                    </p>
-                  </div>
-                  <Badge color={COLOR_POR_ESTADO[entrada.estado] ?? 'gray'}>{label}</Badge>
-                </div>
+      {proximas.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-500">Próximas</h2>
+          {proximas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} />)}
+        </div>
+      )}
 
-                <p className="text-xs text-gray-500">
-                  {entrada.butacas.map((b) => formatButacaCorta(b)).join(', ')}
-                </p>
-                <p className="text-sm font-semibold text-gray-800">{formatMoneda(entrada.montoTotal)}</p>
-
-                {entrada.estado === 'pagado' && (
-                  <div className="bg-gray-50 rounded-xl p-3 text-center">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Código de entrada</p>
-                    <p className="font-mono text-lg font-bold text-gray-800 tracking-widest">
-                      {entrada.id.toUpperCase()}
-                    </p>
-                  </div>
-                )}
-
-                {/* TEMPORAL — sacar cuando exista backend real (webhook de Mercado Pago) */}
-                {entrada.estado === 'pago_en_revision' && (
-                  <Button variant="secondary" size="sm" onClick={() => marcarComoPagada(entrada.id)}>
-                    [DEV] Simular confirmación de secretaría
-                  </Button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+      {pasadas.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-gray-500">Pasadas</h2>
+          {pasadas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} />)}
+        </div>
       )}
     </div>
   )
