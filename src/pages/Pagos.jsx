@@ -12,7 +12,7 @@ import { useCargos } from '../hooks/useCargos'
 import { usePagoOnline } from '../hooks/usePagoOnline'
 import { useToast } from '../context/ToastContext'
 import { crearOrdenPagoCuota } from '../api/client'
-import { formatMoneda, formatFecha, formatMesLabel, infoEstadoCuota, infoMetodoPago, diasHasta } from '../utils/format'
+import { formatMoneda, formatFecha, formatMesLabel, fechaLocalDeDatetime, infoEstadoCuota, infoMetodoPago, diasHasta } from '../utils/format'
 
 function BadgeCuota({ cuota }) {
   const { label } = infoEstadoCuota(cuota.estado)
@@ -133,7 +133,7 @@ export default function Pagos() {
             <CalendarCheck2 size={18} className="text-emerald-500" />
           </div>
           <p className="text-lg font-bold text-gray-800 leading-tight">
-            {ultimoPago ? formatFecha(ultimoPago.fecha_pago.split('T')[0], { conAnio: false }) : '—'}
+            {ultimoPago ? formatFecha(fechaLocalDeDatetime(ultimoPago.fecha_pago), { conAnio: false }) : '—'}
           </p>
           <p className="text-xs text-gray-400">Último pago</p>
         </div>
@@ -187,7 +187,7 @@ export default function Pagos() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-800 truncate">{pago.concepto}</p>
                   <p className="text-xs text-gray-400 flex items-center gap-1">
-                    Pagado el {formatFecha(pago.fecha_pago.split('T')[0], { conAnio: false })}
+                    Pagado el {formatFecha(fechaLocalDeDatetime(pago.fecha_pago), { conAnio: false })}
                     <span className="mx-0.5">·</span>
                     <IconoMetodoPago metodo={pago.medio_pago} size={12} className="text-gray-400" />
                     {infoMetodoPago(pago.medio_pago).label}
