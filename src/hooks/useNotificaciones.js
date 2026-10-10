@@ -4,7 +4,7 @@ import {
   getAsistenciaHija, getEvaluaciones, getEventos,
   getNotificaciones, marcarNotificacionLeida, marcarTodasLeidas,
 } from '../api/client'
-import { calcularNotificaciones, hoyLocalISO, tipoVisualDeBackend, fechaLocalDeInstante } from '../utils/format'
+import { calcularNotificaciones, hoyLocalISO, tipoVisualDeBackend, fechaLocalDeDatetime } from '../utils/format'
 
 const CLAVE_LEIDAS = 'crear_notifs_leidas'
 
@@ -75,7 +75,7 @@ export function useNotificaciones() {
       titulo: n.titulo,
       mensaje: n.cuerpo,
       ctaRuta: n.enlace,
-      fecha: fechaLocalDeInstante(n.fecha),
+      fecha: fechaLocalDeDatetime(n.fecha),
       leida: n.leida,
       orden: new Date(n.fecha).getTime(),
     }))
