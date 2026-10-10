@@ -196,16 +196,6 @@ function fechaLocalISO(anio, mes, dia) {
   return `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
 }
 
-// Las notificaciones del backend traen `fecha` como datetime con timezone
-// (ej. 2026-10-05T01:00:00Z): un pago hecho a las 22hs de Argentina cae al
-// día siguiente en UTC. new Date(iso) lo pasa a hora local del navegador
-// (Argentina, UTC-3) y de ahí se arma el día calendario con fechaLocalISO
-// (mes base 0, igual que getMonth()) — nada de .toISOString(), que vuelve a UTC.
-export function fechaLocalDeInstante(iso) {
-  const d = new Date(iso)
-  return fechaLocalISO(d.getFullYear(), d.getMonth(), d.getDate())
-}
-
 // Vigencia del apto físico: 12 meses desde fecha_apto, con aviso los últimos 30 días. Deben coincidir con
 // avisos_service.py del backend (MESES_VIGENCIA_APTO, DIAS_AVISO_APTO) — duplicados a mano acá porque no hay
 // un endpoint de configuración accesible al tutor desde el portal.
