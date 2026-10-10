@@ -119,8 +119,8 @@ src/
 | Eventos (cartelera y detalle) | ✅ Real, solo lectura |
 | Vestuario (cuotas y pagos, desde Eventos, con pago online) | ✅ Real |
 | Notificaciones | ✅ Híbrido: cuotas y pagos vienen del backend (la lectura se guarda en el servidor); asistencia baja, apto físico, notas y eventos se calculan en el front y su lectura se guarda por dispositivo |
-| Entradas con butacas | 🟡 Parcial: Mis entradas, elegir y cambiar butacas ✅; pago online y devoluciones ⬜ |
-| Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅, vestuario ✅; matrícula y entradas todavía pagan solo en mostrador |
+| Entradas con butacas | 🟡 Parcial: Mis entradas, elegir y cambiar butacas, pago online ✅; devoluciones ⬜ |
+| Pago online (Mercado Pago) | 🟡 Parcial: cuotas ✅, vestuario ✅, entradas ✅; matrícula todavía paga solo en mostrador |
 
 ## Convenciones a respetar
 

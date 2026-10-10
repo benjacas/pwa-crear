@@ -4,19 +4,25 @@ import { getOrdenPago } from '../api/client'
 const INTERVALO_MS = 5000
 const LIMITE_MS = 2 * 60 * 1000
 
-function prefijoAlumnoTipo(alumnoId, tipo) {
-  return `crear_orden_pendiente:${alumnoId}:${tipo}:`
+// `ambito` es opcional: cuota/vestuario lo necesitan (alumnoId, la orden es
+// de una hija puntual) y entradas no (la compra es de toda la familia). Se
+// distingue `null` ("esta pantalla no usa ambito") de `undefined` ("todavía
+// no cargó", ej. alumnoActivo?.alumno_id mientras las hijas no llegaron) —
+// solo lo segundo frena el efecto más abajo. Con o sin ambito la clave sigue
+// empezando con "crear_orden_pendiente:", que es lo que mira el logout.
+function prefijoAmbitoTipo(ambito, tipo) {
+  return ambito != null ? `crear_orden_pendiente:${ambito}:${tipo}:` : `crear_orden_pendiente:${tipo}:`
 }
 
-function claveLocal(alumnoId, tipo, conceptoId) {
-  return `${prefijoAlumnoTipo(alumnoId, tipo)}${conceptoId}`
+function claveLocal(ambito, tipo, conceptoId) {
+  return `${prefijoAmbitoTipo(ambito, tipo)}${conceptoId}`
 }
 
 // Puede haber más de una orden pendiente por pantalla (cada cuota, o cada
-// cargo de vestuario, tiene la suya — se pueden pagar en cualquier orden):
-// por eso esto es un listado, no una lectura de una sola clave fija.
-function listarPendientes(alumnoId, tipo) {
-  const prefijo = prefijoAlumnoTipo(alumnoId, tipo)
+// cargo de vestuario/entradas, tiene la suya — se pueden pagar en cualquier
+// orden): por eso esto es un listado, no una lectura de una sola clave fija.
+function listarPendientes(ambito, tipo) {
+  const prefijo = prefijoAmbitoTipo(ambito, tipo)
   const resultado = []
   for (let i = 0; i < localStorage.length; i++) {
     const clave = localStorage.key(i)
@@ -31,26 +37,35 @@ function listarPendientes(alumnoId, tipo) {
   return resultado
 }
 
-function guardarPendiente(alumnoId, tipo, conceptoId, ordenId) {
-  localStorage.setItem(claveLocal(alumnoId, tipo, conceptoId), JSON.stringify({ ordenId, conceptoId }))
+function guardarPendiente(ambito, tipo, conceptoId, ordenId) {
+  localStorage.setItem(claveLocal(ambito, tipo, conceptoId), JSON.stringify({ ordenId, conceptoId }))
 }
 
-function borrarPendiente(alumnoId, tipo, conceptoId) {
-  localStorage.removeItem(claveLocal(alumnoId, tipo, conceptoId))
+function borrarPendiente(ambito, tipo, conceptoId) {
+  localStorage.removeItem(claveLocal(ambito, tipo, conceptoId))
 }
 
-// Fases: idle | creando | resumen | esperando | sin_confirmar | conflicto |
-// error. "pagado" no es una fase propia: no tiene vista en la hoja (la
-// resuelve `onPagado`, que recarga y decide toast/comprobante), así que al
-// acreditarse se vuelve directo a 'idle' en vez de pasar por un estado
-// intermedio que alguien tendría que acordarse de cerrar.
+// Fases: idle | creando | resumen | esperando | sin_confirmar | vencida |
+// conflicto | error. "pagado" no es una fase propia: no tiene vista en la
+// hoja (la resuelve `onPagado`, que recarga y decide toast/comprobante), así
+// que al acreditarse se vuelve directo a 'idle' en vez de pasar por un
+// estado intermedio que alguien tendría que acordarse de cerrar.
 //
-// Genérico por `tipo` ('cuota' | 'vestuario' | lo que haga falta a futuro):
-// la clave de localStorage es `crear_orden_pendiente:<alumnoId>:<tipo>:<conceptoId>`
-// (un slot por concepto, no uno solo por alumna — antes de generalizar esto
-// para vestuario, cuotas usaba una única clave por alumna y perdía el rastro
-// de una orden si se abría otra antes de pagarla; ahora ninguna de las dos
-// pantallas pisa a la otra, ni entre cuotas/cargos del mismo tipo entre sí).
+// "vencida" es distinta de "sin_confirmar": las dos significan "se acabó la
+// espera y seguimos sin ver el pago", pero en "sin_confirmar" (cuota/
+// vestuario, sin vencimiento real) tiene sentido ofrecer "Revisar ahora"
+// porque la orden sigue viva; en "vencida" (entradas, con expira_at) la
+// orden ya quedó CANCELADA del lado del backend — insistir solo volvería a
+// pegarle a una orden muerta, así que ahí se ofrece generar una orden nueva
+// en vez de reconsultar la vieja en bucle.
+//
+// Genérico por `tipo` ('cuota' | 'vestuario' | 'entradas' | lo que haga
+// falta a futuro): la clave de localStorage es
+// `crear_orden_pendiente:<ambito?>:<tipo>:<conceptoId>` (un slot por
+// concepto, no uno solo por ambito — antes de generalizar esto para
+// vestuario, cuotas usaba una única clave por alumna y perdía el rastro de
+// una orden si se abría otra antes de pagarla; ahora ninguna pantalla pisa
+// a la otra, ni entre cuotas/cargos del mismo tipo entre sí).
 //
 // Solo puede haber UNA hoja activa (un solo `fase`/`orden` a la vez, es lo
 // que el usuario puede estar mirando) aunque haya varias órdenes pendientes
@@ -59,9 +74,27 @@ function borrarPendiente(alumnoId, tipo, conceptoId) {
 // correr dos `setInterval` del mismo hook pisándose el `fase` uno al otro.
 //
 // `crearOrden(conceptoId)` es la función que hace el POST real (inyectada
-// por quien usa el hook: `crearOrdenPagoCuota` o `crearOrdenPagoVestuario`
-// ya aplicadas al alumnoId) — así el hook no sabe nada de endpoints.
-export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
+// por quien usa el hook: `crearOrdenPagoCuota`, `crearOrdenPagoVestuario` o
+// `crearOrdenPagoEntradas` ya aplicadas a lo que haga falta) — así el hook
+// no sabe nada de endpoints.
+//
+// Quinto parámetro, opcional, para lo que varía entre conceptos:
+// - `consultarOrden(ordenId)`: default `getOrdenPago(ambito, ordenId)` (la
+//   ruta por alumna); entradas inyecta `getOrdenPagoEntradas(ordenId)` (sin
+//   alumna, la ruta es de toda la familia).
+// - `calcularLimite(orden, inicioMs)`: devuelve el instante (ms) en que se
+//   deja de esperar. Default `inicioMs + 2 minutos` (relativo a cuándo se
+//   confirmó la salida a Mercado Pago, como hasta ahora). Entradas inyecta
+//   `expira_at + margen corto`: un tope absoluto fijado al crear la orden,
+//   no relativo a cuándo se hizo click en pagar.
+// - `faseAlVencer`: 'sin_confirmar' (default) o 'vencida'.
+export function usePagoOnline(ambito, tipo, crearOrden, onPagado, opciones = {}) {
+  const {
+    consultarOrden = (ordenId) => getOrdenPago(ambito, ordenId),
+    calcularLimite = (_orden, inicioMs) => inicioMs + LIMITE_MS,
+    faseAlVencer = 'sin_confirmar',
+  } = opciones
+
   const [fase, setFase] = useState('idle')
   const [orden, setOrden] = useState(null)
   const [conceptoId, setConceptoId] = useState(null)
@@ -70,6 +103,7 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
 
   const intervaloRef = useRef(null)
   const inicioRef = useRef(null)
+  const limiteRef = useRef(null)
   // Espejo de `conceptoId` legible desde closures viejas (consultar/
   // iniciarPolling no lo llevan en sus deps, así que su versión de ese
   // estado puede estar vieja) — es lo único confiable para saber de qué
@@ -105,13 +139,14 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
   // de retorno de Mercado Pago que se consulte para eso (regla explícita
   // del pedido original).
   const consultar = useCallback(async (ordenId) => {
+    let data = null
     try {
-      const data = await getOrdenPago(alumnoId, ordenId)
+      data = await consultarOrden(ordenId)
       setOrden(data)
       if (data.estado === 'PAGADA') {
         const resuelto = conceptoIdRef.current
         detenerPolling()
-        borrarPendiente(alumnoId, tipo, resuelto)
+        borrarPendiente(ambito, tipo, resuelto)
         desmarcarPendiente(resuelto)
         actualizarConceptoId(null)
         setFase('idle')
@@ -121,27 +156,40 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
       if (data.estado === 'CONFLICTO') {
         const resuelto = conceptoIdRef.current
         detenerPolling()
-        borrarPendiente(alumnoId, tipo, resuelto)
+        borrarPendiente(ambito, tipo, resuelto)
         desmarcarPendiente(resuelto)
         setFase('conflicto')
         return
       }
+      // Solo entradas llega a CANCELADA (orden vencida que el backend ya
+      // chequeó contra Mercado Pago sin encontrar un pago aprobado) — se
+      // corta la espera ahí mismo, no hace falta llegar al tope de tiempo
+      // local para darse cuenta.
+      if (data.estado === 'CANCELADA') {
+        const resuelto = conceptoIdRef.current
+        detenerPolling()
+        borrarPendiente(ambito, tipo, resuelto)
+        desmarcarPendiente(resuelto)
+        setFase(faseAlVencer)
+        return
+      }
     } catch {
       // Error de red durante el polling: se tolera y se reintenta en el
-      // próximo tick, solo importa si ya venció el límite de 2 minutos.
+      // próximo tick, solo importa si ya se llegó al tope de espera.
     }
-    if (inicioRef.current !== null && Date.now() - inicioRef.current >= LIMITE_MS) {
+    if (limiteRef.current !== null && Date.now() >= limiteRef.current) {
       detenerPolling()
-      setFase('sin_confirmar')
+      setFase(faseAlVencer)
     }
-  }, [alumnoId, tipo, detenerPolling, onPagado, actualizarConceptoId, desmarcarPendiente])
+  }, [ambito, tipo, consultarOrden, faseAlVencer, detenerPolling, onPagado, actualizarConceptoId, desmarcarPendiente])
 
-  const iniciarPolling = useCallback((ordenId) => {
+  const iniciarPolling = useCallback((ordenId, ordenParaLimite) => {
     detenerPolling()
     inicioRef.current = Date.now()
+    limiteRef.current = calcularLimite(ordenParaLimite, inicioRef.current)
     setFase('esperando')
     intervaloRef.current = setInterval(() => consultar(ordenId), INTERVALO_MS)
-  }, [consultar, detenerPolling])
+  }, [consultar, detenerPolling, calcularLimite])
 
   // Al abrir la pantalla: arma `pendientes` de una (síncrono, desde
   // localStorage) para que los botones ya digan "Retomar pago" sin esperar
@@ -155,11 +203,13 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
     setOrden(null)
     actualizarConceptoId(null)
     setError(null)
-    if (!alumnoId) {
+    // undefined (todavía no cargó, ej. alumnoActivo sin resolver) frena
+    // todo; null (esta pantalla no usa ambito, ej. entradas) sigue de largo.
+    if (ambito === undefined) {
       setPendientes(new Set())
       return
     }
-    const items = listarPendientes(alumnoId, tipo)
+    const items = listarPendientes(ambito, tipo)
     setPendientes(new Set(items.map((it) => it.conceptoId)))
     if (items.length === 0) return
 
@@ -169,14 +219,14 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
       for (const item of items) {
         if (cancelado) return
         try {
-          const data = await getOrdenPago(alumnoId, item.ordenId)
+          const data = await consultarOrden(item.ordenId)
           if (cancelado) return
           if (data.estado === 'PAGADA') {
-            borrarPendiente(alumnoId, tipo, item.conceptoId)
+            borrarPendiente(ambito, tipo, item.conceptoId)
             desmarcarPendiente(item.conceptoId)
             onPagado?.(item.conceptoId, data)
           } else if (data.estado === 'CONFLICTO') {
-            borrarPendiente(alumnoId, tipo, item.conceptoId)
+            borrarPendiente(ambito, tipo, item.conceptoId)
             desmarcarPendiente(item.conceptoId)
             if (!activoAsignado) {
               activoAsignado = true
@@ -184,11 +234,20 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
               actualizarConceptoId(item.conceptoId)
               setFase('conflicto')
             }
+          } else if (data.estado === 'CANCELADA') {
+            borrarPendiente(ambito, tipo, item.conceptoId)
+            desmarcarPendiente(item.conceptoId)
+            if (!activoAsignado) {
+              activoAsignado = true
+              setOrden(data)
+              actualizarConceptoId(item.conceptoId)
+              setFase(faseAlVencer)
+            }
           } else if (!activoAsignado) {
             activoAsignado = true
             setOrden(data)
             actualizarConceptoId(item.conceptoId)
-            iniciarPolling(item.ordenId)
+            iniciarPolling(item.ordenId, data)
           }
         } catch {
           // sigue pendiente en localStorage, se reintenta en la próxima apertura
@@ -196,7 +255,7 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
       }
     })()
     return () => { cancelado = true }
-  }, [alumnoId, tipo])
+  }, [ambito, tipo])
 
   // Vuelve a consultar al recuperar el foco — típico al volver de Mercado
   // Pago desde el celular.
@@ -212,11 +271,13 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
   useEffect(() => () => detenerPolling(), [detenerPolling])
 
   // Pagar y Retomar llaman a lo mismo: el backend ya es idempotente (devuelve
-  // la orden activa existente en vez de crear otra), así que no hace falta
-  // un camino GET separado para "retomar". Si había otra orden siendo
-  // polleada en segundo plano, se frena (solo puede haber una hoja activa) —
-  // la anterior sigue pendiente en localStorage y en `pendientes`, no se
-  // pierde, solo deja de consultarse hasta que se la abra de nuevo.
+  // la orden activa existente en vez de crear otra, salvo que la anterior ya
+  // haya vencido — ahí da una nueva, al precio de hoy), así que no hace
+  // falta un camino GET separado para "retomar" ni para "generar otra" tras
+  // vencer. Si había otra orden siendo polleada en segundo plano, se frena
+  // (solo puede haber una hoja activa) — la anterior sigue pendiente en
+  // localStorage y en `pendientes`, no se pierde, solo deja de consultarse
+  // hasta que se la abra de nuevo.
   const abrirPago = useCallback(async (id) => {
     detenerPolling()
     setError(null)
@@ -225,21 +286,21 @@ export function usePagoOnline(alumnoId, tipo, crearOrden, onPagado) {
     try {
       const data = await crearOrden(id)
       setOrden(data)
-      guardarPendiente(alumnoId, tipo, id, data.id)
+      guardarPendiente(ambito, tipo, id, data.id)
       marcarPendiente(id)
       setFase('resumen')
     } catch (e) {
       setError({ status: e.status, codigo: e.codigo, mensaje: e.message })
       setFase('error')
     }
-  }, [alumnoId, tipo, crearOrden, actualizarConceptoId, marcarPendiente, detenerPolling])
+  }, [ambito, tipo, crearOrden, actualizarConceptoId, marcarPendiente, detenerPolling])
 
   // Se llama en el onClick del <a href={checkout_url}>: no cancela la
   // navegación (nada de preventDefault ni window.open), solo prepara la
   // espera para cuando la familia vuelva de Mercado Pago.
   const confirmarSalida = useCallback(() => {
     if (!orden) return
-    iniciarPolling(orden.id)
+    iniciarPolling(orden.id, orden)
   }, [orden, iniciarPolling])
 
   const revisarAhora = useCallback(() => {
