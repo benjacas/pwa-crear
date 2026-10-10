@@ -3906,6 +3906,183 @@ que mezclaba cualquier error con "credenciales incorrectas".
     se haya podido ver completarse. Falta probarlo en un celular real
     con pantalla, donde sí debería resolver.
 
+## Tarea T — Pago online de entradas + "vencida" como fase propia de `usePagoOnline`
+
+**Spec**: la cuarta cosa que entra a `usePagoOnline`/`PagoOnlineHoja` después
+de cuota (Tarea O) y vestuario (Tarea P) — pagar online los cargos de una
+compra de entradas, con la vuelta de que acá la orden sí vence de verdad
+(15 minutos, precio congelado) y antes ninguna de las dos pantallas previas
+tenía que lidiar con eso.
+
+- **Pregunta del pedido, contestada leyendo el schema real
+  (`schemas/portal.py`)**: `OrdenPagoDeLaFamilia` **no trae `pago_id`**
+  (`id, estado, monto, importe, recargo, checkout_url, expira_at`, nada
+  más) — confirmado también que `GET /portal/entradas` tampoco expone un
+  pago por cargo (solo `{id, numero, fecha_vencimiento, estado, importe,
+  puede_pagar, motivo_pago}`). Se implementó igual
+  `descargarReciboEntradas(pagoId)` en `client.js` y se generalizó
+  `ComprobanteModal` (`obtenerBlob` inyectable, `alumno` ahora opcional —
+  sin alumno no muestra la fila "Alumno/a"), pero **`MisEntradas.jsx` no
+  llama a ninguna de las dos**: no hay ningún punto del flujo actual donde
+  aparezca un `pago_id` para abrirlo. Queda la plomería lista para el día
+  que el backend lo exponga (ej. un campo en el cargo ya pagado o en la
+  orden PAGADA) — sin tocar el backend no hay forma de resolver esto desde
+  acá.
+- **`usePagoOnline` (Tareas O/P), generalizado de nuevo, esta vez en dos
+  ejes que entradas necesitaba y cuota/vestuario no**:
+  - **La consulta del estado se inyecta** (`consultarOrden`, con default
+    `(ordenId) => getOrdenPago(ambito, ordenId)` — exactamente el
+    comportamiento viejo si no se pasa nada). Entradas inyecta
+    `getOrdenPagoEntradas(ordenId)` (sin alumno en la URL).
+  - **El primer parámetro pasó de `alumnoId` a `ambito`, y ahora distingue
+    `null` de `undefined`**: `undefined` (ej. `alumnoActivo?.alumno_id`
+    mientras las hijas no cargaron) sigue frenando el efecto de armar
+    `pendientes` como antes; `null` (lo que pasa `MisEntradas.jsx` a
+    propósito — la compra es de toda la familia, no hay una hija a la que
+    atribuirle la orden) ahora lo deja seguir. La clave de localStorage
+    cae en el formato pedido, `crear_orden_pendiente:entradas:<cargoId>`
+    (sin segmento de ambito en el medio) — confirmado tal cual con
+    Playwright, ver más abajo. El prefijo sigue siendo
+    `crear_orden_pendiente:`, así que el logout (que ya limpia por ese
+    prefijo) no necesitó tocarse.
+  - **El tope de espera también se inyecta** (`calcularLimite(orden,
+    inicioMs)`, default `inicioMs + 2 minutos` — el comportamiento viejo,
+    relativo a cuándo se tocó "Ir a Mercado Pago"). Entradas inyecta un
+    tope **absoluto**: `expira_at + 20s de margen corto`, sin importar
+    cuánto haya tardado la familia en tocar el link — tiene sentido
+    distinto al de cuota/vestuario porque ahí si la orden expiró hace
+    rato, seguir esperando 2 minutos más desde el click no tiene ningún
+    sentido.
+  - **Fase nueva, `vencida`, distinta de `sin_confirmar`**: las dos
+    significan "se acabó la espera y no vimos el pago", pero en
+    `sin_confirmar` (cuota/vestuario, sin vencimiento real) "Revisar
+    ahora" tiene sentido porque la orden sigue viva; en `vencida` la orden
+    ya quedó `CANCELADA` del lado del backend (confirmado en
+    `ConceptoEntradas.buscar_reutilizable`: una orden `CREADA` vencida se
+    re-chequea contra Mercado Pago y, si no se acreditó, se marca
+    `CANCELADA` antes de dejar crear una nueva al precio del día) —
+    insistir ahí solo volvería a pegarle a una orden muerta, así que el
+    hook corta el polling apenas ve `CANCELADA` (no hace falta ni llegar
+    al tope de tiempo local) y la hoja ofrece "Generar otra" en vez de
+    "Revisar ahora". Qué fase usar al vencer es un parámetro
+    (`faseAlVencer`, default `'sin_confirmar'`) — cuota/vestuario nunca lo
+    pasan, nunca llegan a `vencida`.
+  - Nada de esto tocó las cuatro cosas que ya le pedían specs anteriores
+    (`abrirPago`/`confirmarSalida`/`revisarAhora`/`cerrarHoja`,
+    `pendientes`, reanudación al montar, re-consulta al volver el foco de
+    la pestaña): todo eso se mantuvo igual, solo generalizado para aceptar
+    los nuevos parámetros opcionales.
+- **`PagoOnlineHoja`**: props nuevas, todas opcionales (si no se pasan, el
+  render es idéntico al de antes — por eso Pagos.jsx/Vestuario.jsx no
+  necesitaron ningún cambio). `detalle` (nodo con evento + función +
+  "Cuota N de M" + cantidad de entradas, armado en `MisEntradas.jsx`, no
+  en la hoja — la hoja no sabe nada de esos campos, solo le dan un lugar
+  arriba del importe). `textoPago` (reemplaza el "se paga el saldo
+  completo..." fijo — entradas pasa el texto de los 15 minutos pedido tal
+  cual). `expiraAt` (si viene, muestra `<CuentaRegresiva>` en `resumen` y
+  `esperando` — mm:ss con `setInterval` de 1s sobre resta de
+  milisegundos, nada de `toISOString()`). `onGenerarOtra` (botón de la
+  fase `vencida`, llama a `abrirPago(conceptoId)` de nuevo — el backend ya
+  da una orden nueva al precio de hoy, no hizo falta un método aparte para
+  "reintentar"). De paso, el mensaje de `conflicto` (compartido por las
+  tres pantallas) sumó "y no vuelvas a pagarlo mientras tanto" — lo pedía
+  el spec de entradas pero aplica igual de bien a cuota/vestuario, así que
+  se cambió el texto único en vez de bifurcarlo.
+- **`MisEntradas.jsx`**: cada cargo decide entre un botón ("Pagar cuota N"
+  o "Retomar pago" si `pendientes.has(cargo.id)`) si `cargo.puede_pagar`,
+  o el `cargo.motivo_pago` del backend como texto si no — se borró la
+  línea fija "El pago se registra en la academia", que ya no describe
+  ningún cargo real de esta pantalla. `crearOrden(cargoId)` busca la
+  compra dueña del cargo en el estado ya cargado (`crearOrdenPagoEntradas`
+  necesita el `compraId` en la URL, pero `usePagoOnline` solo maneja
+  `conceptoId`). Al acreditarse: recarga `useEntradas` y las
+  notificaciones, y un toast (sin botón propio — el botón "Elegir
+  butacas" ya aparece solo en `AccionButacas` apenas `recargar()` trae
+  `puede_elegir_butacas: true`) con el texto exacto pedido, "Tu compra
+  está paga. Ya podés elegir tus butacas." si la compra quedó `PAGADA`, o
+  "Pagaste la cuota N de M. La próxima vence el \<fecha\>." si quedan
+  cuotas. 409 `ERR_CARGO_PAGADO` y 404: silenciosos (toast + recarga +
+  cierra la hoja, mismo patrón que Pagos.jsx/Vestuario.jsx). 409
+  `ERR_PAGAR_CUOTA_EN_ORDEN` ("primero pagá la cuota anterior"): la hoja
+  se queda abierta mostrando el mensaje real del backend (vía la fase
+  `error` genérica, sin cambios) y además recarga en segundo plano, por si
+  la cuota anterior se pagó desde otro lado justo en el medio. 422 (falta
+  email) y 502/503: sin manejo especial, ya los cubre la fase `error`
+  genérica de la hoja (el link a Perfil del 422 ya existía desde la Tarea
+  O).
+- **Encontrado de paso, no tocado**: `Shell.jsx` todavía arma
+  `misEntradasApi` (`useMisEntradas()`, un hook mock que simula compra/
+  webhook con fixtures) y lo pasa por el contexto del `<Outlet>` — nada en
+  el código lo lee (confirmado con un grep de `misEntradasApi` en todo
+  `src/`, ni siquiera `MisEntradas.jsx`, que usa su propio `useEntradas()`
+  real). Es sobrante de antes de que la Tarea R borrara el flujo mock de
+  compra (commit `2840c4e`) y nadie limpió esa parte de `Shell.jsx`. Fuera
+  del alcance de este pedido (no tocar butacas/flujo de compra), queda
+  anotado para una futura tarea de limpieza.
+- **Verificado contra el backend real** (familia Ortiz, contraseña dada
+  por el usuario): `GET /portal/entradas` con la compra real de Clara
+  Ortiz — confirmado el shape exacto de `cargo` (`id`, `puede_pagar:
+  false`, `motivo_pago: "Ya está paga."` para el único cargo real, ya
+  pago) y que la pantalla lo muestra como texto sin botón, sin la línea
+  genérica vieja. `POST .../orden-pago` sobre ese mismo cargo (ya pago) →
+  409 real, `{"codigo":"ERR_CARGO_PAGADO","mensaje":"Esa parte ya está
+  paga."}`, igual al que arma `ConceptoEntradas.error_cerrado()` leído en
+  el backend. `POST .../orden-pago` con compra/cargo inexistentes y `GET
+  .../ordenes-pago/<uuid al voleo>` → 404 real,
+  `{"codigo":"ERR_NO_ENCONTRADO", ...}` en los dos casos. **Regresión de
+  cuota y vestuario** (Clara Ortiz tiene una cuota de octubre y una cuota
+  de vestuario pendientes de verdad): se abrió la hoja de pago real en las
+  dos pantallas, con orden creada contra el backend real
+  (`checkout_url`/`Total` reales, nada simulado) — confirmado que
+  `usePagoOnline` generalizado no cambió nada de su comportamiento viejo
+  (sin `Te quedan`, sin fase `vencida`, textos iguales a antes). No se
+  intentó un ciclo completo de pago real (no hay forma de simular un pago
+  aprobado de Mercado Pago desde acá) ni se tocó la base a mano.
+  - **No se pudo probar en vivo un cargo de entradas pendiente**: la única
+    compra real de entradas de esta familia ya está totalmente pagada (de
+    pruebas de la Tarea R), y generar una nueva requiere a la directora
+    (`anular_pago` es `ROLES_DIRECCION`) o datos que no hay forma de crear
+    sin tocar la base. Se intentó conseguir la clave de dirección (mismo
+    camino que funcionó en otra tarea), pero la clave que llegó no
+    coincidió con esa cuenta (`ERR_CREDENCIALES_INVALIDAS`) — en vez de
+    reintentar contra una cuenta real no demo (riesgo de bloqueo a los 5
+    intentos), se frenó y el usuario pidió seguir con todo lo demás
+    simulado.
+- **Simulado con Playwright (`page.route()`), contra la build de
+  desarrollo real, con sesión real de `familia@demo`**: compra armada a
+  mano (1 cargo, con recargo) para probar la hoja completa — `resumen`
+  muestra evento, función (fecha+hora+sala), "Cuota 1 de 1 · 2 entradas",
+  importe, recargo (350), total, el texto fijo de los 15 minutos, y "Te
+  quedan 0:59"; el link trae `target="_blank"` y
+  `rel="noopener noreferrer"` confirmado por atributo (no por lectura de
+  código), y al click abre una pestaña nueva de verdad (`page.waitForEvent
+  ('popup')`) sin navegar la pantalla de Mis entradas. Dos variantes del
+  pagado: compra de una sola cuota → al acreditarse, toast "Tu compra está
+  paga. Ya podés elegir tus butacas." visible; compra de dos cuotas → al
+  pagar la primera, toast "Pagaste la cuota 1 de 2. La próxima vence el 1
+  de dic de 2026." visible, con la cuota 1 ya en "Pagado" y "Ya está
+  paga." en la lista. Vencimiento: orden que vuelve `CANCELADA` desde la
+  primera consulta → fase `vencida`, "La orden venció..." y "Generar
+  otra"; tocar ese botón generó una orden nueva de verdad (nuevo id,
+  nueva cuenta regresiva arrancando de cero) sin quedarse reconsultando la
+  vieja. Conflicto: mensaje real con el agregado de "no vuelvas a
+  pagarlo". 409 `ERR_PAGAR_CUOTA_EN_ORDEN`, 422 `ERR_EMAIL_REQUERIDO`
+  (con el link a Perfil) y 502 fabricado: los tres mostrando el mensaje
+  tal cual venía del cuerpo simulado. 404 al crear la orden: silencioso
+  (toast + hoja cerrada, nada del mensaje crudo del backend visible).
+  **Reanudación tras recargar**: se abrió la hoja, se confirmó la clave
+  exacta en localStorage
+  (`crear_orden_pendiente:entradas:<cargoId>`, sin ambito), se cerró la
+  hoja (Escape) y se hizo `page.reload()` — la hoja volvió a abrirse sola,
+  ya en fase `esperando`, con el mismo detalle (evento/función/cuota) y la
+  cuenta regresiva siguiendo desde donde iba (no se reinició): confirma
+  que el polling se retoma solo al montar, sin que haga falta tocar
+  "Retomar pago" a mano (ese botón es para cuando la familia cerró la
+  pantalla sin que la orden llegara a entrar en polling, ej. se fue antes
+  de tocar "Ir a Mercado Pago").
+- `npm run lint` y `npm run build` limpios. Bundle: 300.16 kB → 304.44 kB
+  (+4.28 kB sin comprimir, gzip 91.63 kB → 92.90 kB, +1.27 kB).
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en

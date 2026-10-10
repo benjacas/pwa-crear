@@ -259,6 +259,38 @@ export async function getEntradas() {
   return fetchConToken(`${API_URL}/api/v1/portal/entradas`)
 }
 
+// Mismo mecanismo que crearOrdenPagoCuota/crearOrdenPagoVestuario (reutiliza
+// la orden activa si ya existía una para este cargo), pero solo deja pagar
+// el primer cargo pendiente de la compra (409 ERR_PAGAR_CUOTA_EN_ORDEN si se
+// intenta saltear el orden) y el precio queda congelado al crear la orden,
+// con una orden que dura 15 minutos — a diferencia de cuota/vestuario, que
+// no vencen (confirmado en ConceptoEntradas.duracion, backend).
+export async function crearOrdenPagoEntradas(compraId, cargoId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas/${compraId}/cargos/${cargoId}/orden-pago`, {
+    method: 'POST',
+  })
+}
+
+// Igual que getOrdenPago, pero sin alumnoId en la URL (la compra es de toda
+// la familia, no de una hija puntual). Si la orden sigue CREADA o CANCELADA,
+// el backend vuelve a preguntarle a Mercado Pago antes de contestar — puede
+// acreditar en el último momento una orden que ya venció.
+export async function getOrdenPagoEntradas(ordenId) {
+  return fetchConToken(`${API_URL}/api/v1/portal/entradas/ordenes-pago/${ordenId}`)
+}
+
+// Mismo mecanismo que descargarRecibo (token + blob), pero sin alumnoId: el
+// backend resuelve el recibo de una entrada por familia (cargo -> compra ->
+// familia_id), no por alumna.
+export async function descargarReciboEntradas(pagoId) {
+  const token = localStorage.getItem('crear_access')
+  const res = await fetch(`${API_URL}/api/v1/portal/entradas/pagos/${pagoId}/recibo.pdf`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('No se pudo descargar el recibo')
+  return res.blob()
+}
+
 // PlanoDeLaCompra: { sala_nombre, butacas: [{id, fila, numero, tipo:
 // "butaca"|"silla_ruedas", fila_orden, col}], ocupadas: uuid[] (de otras
 // compras de esta función, nunca de quién), propias: uuid[] (las de esta

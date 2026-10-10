@@ -14,10 +14,10 @@ export function IconoMetodoPago({ metodo, size = 14, className = '' }) {
   return <Icon size={size} className={className} />
 }
 
-async function descargarComprobante(alumnoId, pago, toast, setDescargando) {
+async function descargarComprobante(obtenerBlob, pago, toast, setDescargando) {
   setDescargando(true)
   try {
-    const blob = await descargarRecibo(alumnoId, pago.id)
+    const blob = await obtenerBlob(pago)
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -33,7 +33,13 @@ async function descargarComprobante(alumnoId, pago, toast, setDescargando) {
   }
 }
 
-export default function ComprobanteModal({ isOpen, onClose, pago, alumno }) {
+// `alumno` es opcional: lo usan Pagos.jsx/Vestuario.jsx (comprobante de una
+// hija puntual, muestra su nombre) pero no MisEntradas.jsx (el pago es de
+// toda la familia, no hay una sola alumna a la que atribuírselo).
+// `obtenerBlob` también es opcional — default: la ruta por alumna
+// (descargarRecibo), igual que antes de agregar esta prop. MisEntradas.jsx
+// inyecta descargarReciboEntradas (sin alumnoId, recibo por familia).
+export default function ComprobanteModal({ isOpen, onClose, pago, alumno, obtenerBlob = (p) => descargarRecibo(alumno.alumno_id, p.id) }) {
   const toast = useToast()
   const [descargando, setDescargando] = useState(false)
   if (!pago) return null
@@ -50,10 +56,12 @@ export default function ComprobanteModal({ isOpen, onClose, pago, alumno }) {
       </div>
 
       <dl className="space-y-3 text-sm">
-        <div className="flex items-center justify-between gap-3">
-          <dt className="text-gray-400">Alumno/a</dt>
-          <dd className="font-medium text-gray-800 text-right">{alumno?.nombre_completo ?? '—'}</dd>
-        </div>
+        {alumno && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-400">Alumno/a</dt>
+            <dd className="font-medium text-gray-800 text-right">{alumno.nombre_completo ?? '—'}</dd>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3">
           <dt className="text-gray-400">Concepto</dt>
           <dd className="font-medium text-gray-800 text-right">{pago.concepto}</dd>
@@ -80,7 +88,7 @@ export default function ComprobanteModal({ isOpen, onClose, pago, alumno }) {
         variant="primary"
         className="w-full justify-center mt-5"
         disabled={descargando}
-        onClick={() => descargarComprobante(alumno.alumno_id, pago, toast, setDescargando)}
+        onClick={() => descargarComprobante(obtenerBlob, pago, toast, setDescargando)}
       >
         <Download size={16} />
         {descargando ? 'Descargando...' : 'Descargar recibo'}
