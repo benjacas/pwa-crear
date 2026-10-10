@@ -27,6 +27,17 @@ export function hoyLocalISO() {
   return new Date(ahora.getTime() - offsetMs).toISOString().slice(0, 10)
 }
 
+// Mismo truco que hoyLocalISO() pero para un datetime cualquiera, no "ahora"
+// — lo necesitan los `fecha_pago` que manda el backend (datetime completo
+// en UTC, con 'Z'). Partir el string en 'T' (lo que hacían ComprobanteModal
+// y Vestuario.jsx) da la fecha en UTC, no la local: un pago hecho a la
+// noche en Argentina queda fechado al día siguiente.
+export function fechaLocalDeDatetime(fechaHoraISO) {
+  const fecha = new Date(fechaHoraISO)
+  const offsetMs = fecha.getTimezoneOffset() * 60000
+  return new Date(fecha.getTime() - offsetMs).toISOString().slice(0, 10)
+}
+
 // Días de calendario entre hoy (local) y `fechaISO` ('YYYY-MM-DD'): negativo
 // si ya pasó. Ambas fechas a medianoche local, nada de horas — evita que un
 // resto de milisegundos corra el redondeo un día para cualquier lado.
