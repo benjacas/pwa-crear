@@ -54,12 +54,16 @@ async function fetchConToken(url, options = {}) {
   return res.json()
 }
 
+// erroDeRespuesta(), no un mensaje fijo: Login.jsx necesita distinguir 401
+// (credenciales) de 429 (demasiados intentos, con el mensaje real del
+// backend — trae los minutos de espera) de 5xx/sin conexión (nada que ver
+// con la contraseña) por el `.status`, no puede hacerlo si acá ya se pierde.
 export async function apiLogin(email, password) {
   const res = await fetch(`${API_URL}/api/v1/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })
-  if (!res.ok) throw new Error('Email o contraseña incorrectos')
+  if (!res.ok) throw await erroDeRespuesta(res)
   return res.json()
 }
 

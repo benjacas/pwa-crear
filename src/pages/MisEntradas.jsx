@@ -1,10 +1,12 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Ticket, CheckCircle2, Download, Armchair } from 'lucide-react'
+import { Ticket, CheckCircle2, Download, Armchair, Expand } from 'lucide-react'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
 import Skeleton from '../components/ui/Skeleton'
 import QRCode from '../components/QRCode'
+import QRAmpliado from '../components/QRAmpliado'
 import { useEntradas } from '../hooks/useEntradas'
 import { descargarEntradaPng } from '../utils/descargarEntrada'
 import { urlEntrada } from '../utils/qr'
@@ -31,7 +33,7 @@ function infoEstadoCargo(estado) {
   return ESTADOS_CARGO[estado] ?? { label: estado, color: 'gray' }
 }
 
-function FilaEntrada({ compra, entrada }) {
+function FilaEntrada({ compra, entrada, onAmpliar }) {
   const anulada = compra.estado === 'ANULADA'
 
   if (entrada.usada) {
@@ -61,12 +63,23 @@ function FilaEntrada({ compra, entrada }) {
     )
   }
 
+  const texto = urlEntrada(entrada.codigo)
+  const etiqueta = `Fila ${entrada.butaca.fila} · Butaca ${entrada.butaca.numero}`
+
   return (
     <div className="flex flex-col items-center gap-3 p-4 rounded-xl border border-gray-100">
-      <QRCode texto={urlEntrada(entrada.codigo)} tamano={160} />
-      <p className="text-sm font-semibold text-gray-800">
-        Fila {entrada.butaca.fila} · Butaca {entrada.butaca.numero}
-      </p>
+      <button
+        type="button"
+        onClick={() => onAmpliar({ texto, etiqueta })}
+        className="relative rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 group"
+        aria-label={`Ampliar código QR, ${etiqueta}`}
+      >
+        <QRCode texto={texto} tamano={180} />
+        <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/5 rounded-xl transition-colors">
+          <Expand size={20} className="text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </span>
+      </button>
+      <p className="text-sm font-semibold text-gray-800">{etiqueta}</p>
       <Button
         variant="secondary"
         size="sm"
@@ -113,7 +126,7 @@ function AccionButacas({ compra }) {
   return motivo ? <p className="text-xs text-gray-400">{motivo}</p> : null
 }
 
-function TarjetaCompra({ compra }) {
+function TarjetaCompra({ compra, onAmpliar }) {
   const { label: labelCompra, color: colorCompra } = infoEstadoCompra(compra.estado)
 
   return (
@@ -165,7 +178,7 @@ function TarjetaCompra({ compra }) {
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Entradas</h3>
           <div className="space-y-2">
             {compra.entradas.map((entrada) => (
-              <FilaEntrada key={entrada.numero} compra={compra} entrada={entrada} />
+              <FilaEntrada key={entrada.numero} compra={compra} entrada={entrada} onAmpliar={onAmpliar} />
             ))}
           </div>
         </div>
@@ -178,6 +191,7 @@ function TarjetaCompra({ compra }) {
 
 export default function MisEntradas() {
   const { compras, cargando, error } = useEntradas()
+  const [ampliado, setAmpliado] = useState(null)
 
   if (cargando) {
     return (
@@ -219,15 +233,19 @@ export default function MisEntradas() {
       {proximas.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500">Próximas</h2>
-          {proximas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} />)}
+          {proximas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} onAmpliar={setAmpliado} />)}
         </div>
       )}
 
       {pasadas.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-gray-500">Pasadas</h2>
-          {pasadas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} />)}
+          {pasadas.map((compra) => <TarjetaCompra key={compra.id} compra={compra} onAmpliar={setAmpliado} />)}
         </div>
+      )}
+
+      {ampliado && (
+        <QRAmpliado texto={ampliado.texto} etiqueta={ampliado.etiqueta} onClose={() => setAmpliado(null)} />
       )}
     </div>
   )

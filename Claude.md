@@ -3797,6 +3797,115 @@ huérfanos de verdad** (nada alcanzable desde una ruta los necesita),
 pero sacarlos es una decisión aparte — tocan `Shell.jsx`, que está
 fuera del alcance de esta tarea.
 
+## Tarea S — QR ampliable, wake lock, y mensajes de error del login
+
+**Spec**: ajustes de uso real en el celular sobre lo de la Tarea R —
+tocar el QR de Mis entradas lo abre a pantalla completa con la
+pantalla sin apagarse mientras se muestra, más un bug viejo del login
+que mezclaba cualquier error con "credenciales incorrectas".
+
+- **Bug real encontrado arreglando el canvas (ítem 2 del pedido)**:
+  `dibujarQR()` (`utils/qr.js`) recibía `tamano` pero dibujaba el QR
+  real (`lado`) desde `(x, y)` sin más — y `lado` casi nunca coincide
+  con `tamano` (la escala se redondea hacia abajo a módulos enteros:
+  para `tamano=160` el QR real salía de ~123px). El `<canvas>` quedaba
+  con el tamaño pedido, pero el QR ocupaba solo una esquina, dejando un
+  margen grande y asimétrico abajo a la derecha — nunca estuvo
+  realmente centrado. Se agregó un `offset` que centra el `lado`×`lado`
+  real dentro de la caja de `tamano`×`tamano`, con fondo blanco de toda
+  la caja (no solo del QR). Arregla el QR de la lista, el ampliado, **y**
+  de paso la descarga en PNG (`descargarEntrada.js` usa la misma
+  función) — no hizo falta tocar ese archivo.
+- **`QRCode.jsx`**: tamaño mínimo en la lista pasó de 160 a 180px
+  (ítem 1). Sigue sin guardar nada, se redibuja cada vez.
+- **`components/QRAmpliado.jsx`** (nuevo): vista a pantalla completa.
+  Tamaño = `max(260, min(ancho de ventana − 64, 400))` — el piso de
+  260px y el "ancho disponible menos márgenes" los pedía el spec; el
+  techo de 400px es una decisión propia (nada lo pedía, pero sin un
+  límite un monitor de escritorio dejaría el QR ocupando media
+  pantalla) y queda recalculado en `resize`/`orientationchange`.
+  - **Tres caminos de cierre que convergen en uno solo**: abrir hace
+    `history.pushState`; el botón "Cerrar", Escape y el gesto/botón
+    atrás del navegador llaman los tres a `history.back()`, y es el
+    handler de `popstate` el único que de verdad desmonta el
+    componente. Así el botón atrás del celular cierra la vista en vez
+    de sacar a la familia de Mis entradas, sin tres implementaciones
+    de "cerrar" que se puedan desincronizar.
+  - **Bug real encontrado en la prueba manual**: un primer intento
+    centraba el contenido con un `-mt-12` a mano para compensar la
+    altura del header con el botón "Cerrar" — el margen negativo hacía
+    que el bloque del QR se superpusiera visualmente sobre el header y
+    **tapara los clics al botón "Cerrar"** (confirmado con Playwright:
+    el intento de click reintentó solo durante el timeout completo,
+    "element intercepts pointer events"). Se sacó el `-mt-12`: con
+    `flex-1 items-center justify-center` alcanza, el contenido queda
+    centrado de verdad en el espacio debajo del header sin invadirlo.
+    Confirmado después con las posiciones reales
+    (`getBoundingClientRect`): el QR queda centrado al píxel dentro de
+    esa caja.
+  - **Wake lock**: `if (!('wakeLock' in navigator)) return` antes que
+    nada — en HTTP esa propiedad ni existe, así que no se intenta nada
+    (nunca "falla"). El pedido se libera al desmontar y también al
+    ocultarse la pestaña (`visibilitychange`), con una bandera `vigente`
+    para la carrera típica de StrictMode en desarrollo (monta, desmonta
+    al toque, vuelve a montar — si la promesa de `request()` resuelve
+    después de que ya se desmontó el primer montaje, no hay que
+    guardar ese sentinel, hay que soltarlo directo).
+- **Login**: `apiLogin()` (`api/client.js`) lanzaba un `Error` fijo
+  ("Email o contraseña incorrectos") para **cualquier** respuesta no
+  exitosa, perdiendo el `status` real — por eso `Login.jsx` no tenía
+  cómo distinguir nada y mostraba siempre el mismo mensaje. Se cambió a
+  `erroDeRespuesta()` (la misma función que ya usa `fetchConToken` para
+  todo lo demás), y `Login.jsx` suma `mensajeErrorLogin(err)`: sin
+  `status` (falló el `fetch` mismo — sin conexión) o `>= 500` → mensaje
+  de conexión; `401` → "Email o contraseña incorrectos."; `429` → el
+  `mensaje` real del backend (trae los minutos exactos de espera,
+  mejor que cualquier texto fijo de acá —
+  `AuthService._exigir_no_bloqueado`, confirmado en el backend).
+  **No se tocó** `manejarCodigo`/`apiLogin2FA` (el paso de 2FA): el
+  pedido hablaba del login con credenciales, que es el único que tenía
+  el bug descripto (el 2FA ya tiene su propio mensaje acotado al
+  código, no a credenciales).
+- **Verificado contra el backend real** (`familia@demo`, contraseña
+  dada por el usuario, nada generado ni reseteado por mí): un intento
+  de login con contraseña incorrecta de verdad → "Email o contraseña
+  incorrectos." (un solo intento, a propósito, para no sumar a los 5
+  fallidos que bloquean la cuenta con un 429 real). El resto de Mis
+  entradas con los datos reales de la familia (2 entradas con butaca
+  de la Tarea R): QR de 180px en la lista, centrado sin margen
+  asimétrico; tocar cualquiera abre la vista ampliada a 326px (390px
+  de viewport − 64 de margen) con "Fila A · Butaca 16" debajo; cierre
+  confirmado por los tres caminos (Escape; botón "Cerrar", recién
+  después de sacar el `-mt-12` de arriba, antes quedaba bloqueado; y
+  `page.goBack()` real de Playwright, confirmando que la URL se queda
+  en `/mis-entradas` en vez de navegar a otro lado). Viewport de 390px
+  y zoom de texto al 200% (`font-size: 200%` en `<html>`, simulando el
+  ajuste de accesibilidad del sistema): todo sigue legible y el botón
+  "Cerrar" sigue siendo clickeable y funcional. `npm run lint` y
+  `npm run build` limpios. Bundle: 297.11 kB → 300.16 kB (+3.05 kB sin
+  comprimir, gzip 90.76 kB → 91.63 kB, +0.87 kB).
+  - **Simulado**: 500 y "sin conexión" (`route.abort`) del login →
+    confirmado el mismo mensaje de conexión en los dos casos; 429 con
+    un cuerpo fabricado con el mensaje real que manda
+    `_exigir_no_bloqueado` → confirmado que se muestra tal cual, no un
+    texto genérico propio.
+  - **Wake lock: no se pudo confirmar la adquisición exitosa de
+    punta a punta en este entorno.** `navigator.wakeLock.request()`
+    devuelve `NotAllowedError: Wake Lock permission request denied` en
+    Chromium headless vía Playwright (confirmado con una llamada
+    directa fuera de la app, mismo resultado) — limitación del entorno
+    sin pantalla real, no de la app. Sí se confirmó: `'wakeLock' in
+    navigator` da `true` en `http://localhost` (Chromium trata
+    localhost como contexto seguro aunque sea HTTP, a diferencia de un
+    HTTP real en producción — por eso ahí la propiedad directamente no
+    existiría y el `if` de arriba corta antes de intentar nada), que
+    el pedido se intenta (interceptado con un wrapper antes de que
+    cargara la app), y que el rechazo se traga sin ningún error de
+    consola ni romper la vista ampliada — el comportamiento exigido
+    ("no debe fallar") quedó confirmado aunque la adquisición en sí no
+    se haya podido ver completarse. Falta probarlo en un celular real
+    con pantalla, donde sí debería resolver.
+
 ## Flujo de trabajo
 
 La planificación se define en una conversación aparte con Claude en
