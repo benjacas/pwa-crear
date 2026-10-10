@@ -2,7 +2,6 @@ import { Outlet, useLocation } from 'react-router-dom'
 import Header from './Header'
 import BottomNav from './BottomNav'
 import { useNotificaciones } from '../../hooks/useNotificaciones'
-import { useMisEntradas } from '../../hooks/useMisEntradas'
 
 // Rutas a las que se llega navegando desde otra página (no viven en
 // BottomNav) — el header les muestra una flecha "volver" en vez del
@@ -21,14 +20,9 @@ export default function Shell() {
   const location = useLocation()
   const mostrarVolver = tieneVolver(location.pathname)
 
-  // Se llaman una sola vez acá arriba (no en cada página por separado) para
-  // que el estado se comparta entre el header y las páginas, o entre
-  // páginas que no están montadas al mismo tiempo (ResumenCompra confirma
-  // la compra y navega a MisEntradas: si cada una tuviera su propio
-  // useMisEntradas(), la entrada nueva se perdería al desmontarse
-  // ResumenCompra). Mismo motivo que ya aplicaba para notificaciones.
+  // Se llama una sola vez acá arriba (no en cada página por separado) para
+  // que el estado se comparta entre el header y las páginas.
   const notificacionesApi = useNotificaciones()
-  const misEntradasApi = useMisEntradas()
   // noLeidas del hook, no un conteo manual de notifs: incluye las pendientes
   // del servidor que no entran en las últimas 30 que trae la lista.
   const { noLeidas } = notificacionesApi
@@ -37,7 +31,7 @@ export default function Shell() {
     <div className="flex flex-col h-svh max-w-md mx-auto bg-primary-subtle">
       <Header noLeidas={noLeidas} mostrarVolver={mostrarVolver} />
       <main className="flex-1 overflow-y-auto">
-        <Outlet context={{ notificacionesApi, misEntradasApi }} />
+        <Outlet context={{ notificacionesApi }} />
       </main>
       <BottomNav />
     </div>
