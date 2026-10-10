@@ -12,7 +12,7 @@ import { useVestuario } from '../hooks/useVestuario'
 import { usePagoOnline } from '../hooks/usePagoOnline'
 import { useToast } from '../context/ToastContext'
 import { crearOrdenPagoVestuario, descargarRecibo } from '../api/client'
-import { formatFecha, formatMoneda, infoEstadoCuotaVestuario, infoMetodoPago } from '../utils/format'
+import { formatFecha, formatMoneda, fechaLocalDeDatetime, infoEstadoCuotaVestuario, infoMetodoPago } from '../utils/format'
 
 function BadgeCuotaVestuario({ cuota }) {
   const { label } = infoEstadoCuotaVestuario(cuota.estado)
@@ -211,7 +211,7 @@ export default function Vestuario() {
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-700 truncate">{pago.concepto}</p>
                             <p className="text-xs text-gray-400 flex items-center gap-1">
-                              {formatFecha(pago.fecha_pago.split('T')[0], { conAnio: false })}
+                              {formatFecha(fechaLocalDeDatetime(pago.fecha_pago), { conAnio: false })}
                               <span className="mx-0.5">·</span>
                               <IconoMetodoPago metodo={pago.medio_pago} size={12} className="text-gray-400" />
                               {infoMetodoPago(pago.medio_pago).label}
