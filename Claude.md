@@ -3915,19 +3915,18 @@ compra de entradas, con la vuelta de que acá la orden sí vence de verdad
 tenía que lidiar con eso.
 
 - **Pregunta del pedido, contestada leyendo el schema real
-  (`schemas/portal.py`)**: `OrdenPagoDeLaFamilia` **no trae `pago_id`**
-  (`id, estado, monto, importe, recargo, checkout_url, expira_at`, nada
-  más) — confirmado también que `GET /portal/entradas` tampoco expone un
-  pago por cargo (solo `{id, numero, fecha_vencimiento, estado, importe,
-  puede_pagar, motivo_pago}`). Se implementó igual
+  (`schemas/portal.py`)**: al cerrar esta tarea, `OrdenPagoDeLaFamilia`
+  **no traía `pago_id`** (`id, estado, monto, importe, recargo,
+  checkout_url, expira_at`, nada más), y `GET /portal/entradas` tampoco
+  exponía un pago por cargo (solo `{id, numero, fecha_vencimiento, estado,
+  importe, puede_pagar, motivo_pago}`). Se implementó igual
   `descargarReciboEntradas(pagoId)` en `client.js` y se generalizó
   `ComprobanteModal` (`obtenerBlob` inyectable, `alumno` ahora opcional —
-  sin alumno no muestra la fila "Alumno/a"), pero **`MisEntradas.jsx` no
-  llama a ninguna de las dos**: no hay ningún punto del flujo actual donde
-  aparezca un `pago_id` para abrirlo. Queda la plomería lista para el día
-  que el backend lo exponga (ej. un campo en el cargo ya pagado o en la
-  orden PAGADA) — sin tocar el backend no hay forma de resolver esto desde
-  acá.
+  sin alumno no muestra la fila "Alumno/a"), pero en ese momento
+  `MisEntradas.jsx` no llamaba a ninguna de las dos: no había ningún punto
+  del flujo donde apareciera un `pago_id` para abrirlo. **Resuelto en la
+  Tarea U**, más abajo: el backend sumó `pago_id` al cargo y a la orden, y
+  después un historial de pagos completo por compra.
 - **`usePagoOnline` (Tareas O/P), generalizado de nuevo, esta vez en dos
   ejes que entradas necesitaba y cuota/vestuario no**:
   - **La consulta del estado se inyecta** (`consultarOrden`, con default
@@ -4082,6 +4081,85 @@ tenía que lidiar con eso.
   de tocar "Ir a Mercado Pago").
 - `npm run lint` y `npm run build` limpios. Bundle: 300.16 kB → 304.44 kB
   (+4.28 kB sin comprimir, gzip 91.63 kB → 92.90 kB, +1.27 kB).
+
+## Tarea U — Historial de pagos de la compra, con recibo (vigente o anulado)
+
+**Spec**: el backend sumó `compra.pagos[]` (todos los pagos de una compra
+de entradas, vigentes y anulados, del más reciente al más viejo) a
+`GET /portal/entradas` — una sección "Pagos" por compra, con un recibo
+descargable por cada uno, reemplazando el botón de recibo por cargo (ya no
+hace falta: el historial lo cubre, y uno por cargo + uno por pago hubiera
+sido redundante).
+
+- **Paso 0 encontró algo antes de poder leer lo que pedía el punto 1**: el
+  botón "Descargar recibo" por cargo (el de la Tarea T) **no estaba en
+  `main`** — quedó en un commit local de una sesión anterior que nunca se
+  pusheó ni se mergeó. Se avisó antes de asumir nada y se preguntó cómo
+  seguir: la decisión fue reconstruirlo en esta misma rama (pago_id al
+  acreditarse → abre `ComprobanteModal`, con las filas opcionales que ya
+  tenía esa reconstrucción) y, en el mismo commit, dejar que la sección
+  "Pagos" nueva lo reemplace — no tiene sentido escribir un botón por
+  cargo para borrarlo dos líneas después, así que el estado final de
+  `MisEntradas.jsx` no tiene botón por cargo, tiene la sección "Pagos".
+- **Bug real encontrado armando la fecha de cada pago**: `fecha_pago` es
+  un datetime completo en UTC (`"2026-10-08T23:50:00Z"`, confirmado contra
+  el backend real), no una fecha suelta como `cargo.fecha_vencimiento`.
+  El patrón que ya usaban `ComprobanteModal.jsx`, `Pagos.jsx` y
+  `Vestuario.jsx` (`pago.fecha_pago.split('T')[0]`) toma la fecha en
+  **UTC**, no en local: un pago hecho a la noche en Argentina (UTC-3)
+  queda fechado al día siguiente (23:50 UTC del 8 es las 20:50 del 8 en
+  Argentina, pero `split('T')[0]` da "el 9"). Se agregó
+  `fechaLocalDeDatetime()` a `utils/format.js` (mismo truco que
+  `hoyLocalISO()` — correr el reloj por el offset y leer con
+  `.toISOString()`, la única función que puede hacerlo sin que la regla de
+  ESLint se queje) y se usa tanto en la sección "Pagos" nueva como en
+  `ComprobanteModal.jsx` (que ya estaba acá, se corrigió de paso).
+  **`Pagos.jsx` y `Vestuario.jsx` tienen el mismo patrón viejo
+  (confirmado, `git grep fecha_pago`) y no se tocaron** — no eran parte de
+  este pedido y esas pantallas quedan fuera de las que tocan las tareas de
+  entradas; queda anotado para cuando alguien las toque.
+- **`MisEntradas.jsx`**: `FilaPago` (nuevo) arma "Cuota N · $monto ·
+  fecha", el badge "Anulado" si `pago.anulado`, y un botón "Descargar
+  recibo" — **también en los anulados**: el backend genera ese PDF igual
+  (con el sello ANULADO adentro, confirmado leyendo
+  `ComprasEntradasService.recibo()`), así que sacar el botón ahí hubiera
+  sido esconder algo que sí funciona. Debajo del badge, el texto fijo
+  pedido ("Este pago fue anulado..."). La sección entera no se renderiza
+  si `compra.pagos` viene vacío o ausente (`compra.pagos?.length > 0`).
+  `onPagado` (reconstruido) ahora toma el segundo parámetro
+  `ordenPagada` que ya mandaba `usePagoOnline` y antes se ignoraba: si
+  `ordenPagada.pago_id` viene, abre `ComprobanteModal` con un concepto
+  armado del lado del cliente (la orden no trae `medio_pago` ni
+  `fecha_pago`, por eso esas filas son opcionales en el modal).
+- **Verificado contra el backend real** (familia Ortiz, con la contraseña
+  dada por el usuario): `GET /portal/entradas` — el `pagos[]` de la compra
+  real trae exactamente el schema esperado
+  (`id, cargo_numero, monto, medio_pago, fecha_pago, anulado`). La sección
+  "Pagos" en pantalla muestra "Cuota 1 · $ 10.000 · 8 de oct de 2026"
+  (fecha_pago real `2026-10-08T21:09:27Z`, 18:09 en Argentina, mismo día
+  — confirma que `fechaLocalDeDatetime()` no corrió la fecha), sin badge
+  "Anulado" (este pago está vigente), y tocar "Descargar recibo" disparó
+  una descarga real del PDF contra el backend, no un mock.
+  - **El caso "pago anulado" no se pudo probar en vivo**: hace falta una
+    directora de verdad para anular un pago (`anular_pago` es
+    `ROLES_DIRECCION`), y crear una con `app.cli` más cambiarle la clave
+    provisoria es una cuenta nueva y persistente, no algo para armar sobre
+    la marcha sin preguntar primero — el pedido mismo preveía este caso y
+    autorizaba simular en vez de eso, así que se simuló (ver abajo) en
+    lugar de crear la cuenta.
+- **Simulado con Playwright (`page.route()`)**: compra con dos pagos del
+  mismo cargo — uno vigente (`2026-10-09T15:30:00Z`) y uno anulado
+  (`2026-10-08T23:50:00Z`, el caso límite de las 23:50 UTC que cruza la
+  medianoche en UTC pero no en Argentina) — confirmado que las dos fechas
+  se muestran en su día local correcto ("9 de oct" y "8 de oct", nunca "9"
+  para el anulado), que el anulado muestra el badge rojo "Anulado" más el
+  texto de aclaración, y que **los dos** pagos tienen su botón de
+  descarga funcionando (incluido el anulado, que disparó una descarga
+  real contra la ruta simulada). Por separado, una compra con `pagos`
+  directamente ausente del JSON (no solo vacío) confirma que la sección
+  no aparece.
+- `npm run lint` y `npm run build` limpios. Bundle: 304.44 kB → 306.33 kB
+  (+1.89 kB sin comprimir, gzip 92.90 kB → 93.28 kB, +0.38 kB).
 
 ## Flujo de trabajo
 

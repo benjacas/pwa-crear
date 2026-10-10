@@ -8,13 +8,14 @@ import Skeleton from '../components/ui/Skeleton'
 import QRCode from '../components/QRCode'
 import QRAmpliado from '../components/QRAmpliado'
 import PagoOnlineHoja from '../components/PagoOnlineHoja'
+import ComprobanteModal from '../components/ComprobanteModal'
 import { useEntradas } from '../hooks/useEntradas'
 import { usePagoOnline } from '../hooks/usePagoOnline'
 import { useToast } from '../context/ToastContext'
-import { crearOrdenPagoEntradas, getOrdenPagoEntradas } from '../api/client'
+import { crearOrdenPagoEntradas, getOrdenPagoEntradas, descargarReciboEntradas } from '../api/client'
 import { descargarEntradaPng } from '../utils/descargarEntrada'
 import { urlEntrada } from '../utils/qr'
-import { formatFecha, formatHora, formatMoneda, hoyLocalISO, motivoButacas } from '../utils/format'
+import { formatFecha, formatHora, formatMoneda, fechaLocalDeDatetime, hoyLocalISO, motivoButacas } from '../utils/format'
 
 // El margen que se espera además de expira_at antes de declarar la orden
 // "vencida" en la UI: corto a propósito (no son 2 minutos como cuota/
@@ -181,6 +182,64 @@ function FilaCargo({ cargo, pagoOnline }) {
   )
 }
 
+// Mismo mecanismo que ComprobanteModal (token + blob), pero sin abrir
+// ningún modal — un botón de descarga directa por fila, igual que el de
+// cada pago de Vestuario.jsx. El backend genera el recibo tanto de pagos
+// vigentes como anulados (con el sello ANULADO adentro), así que el botón
+// no se saca cuando `pago.anulado` — solo se agrega la aclaración de abajo.
+async function descargarReciboPago(pagoId, toast, setDescargando) {
+  setDescargando(true)
+  try {
+    const blob = await descargarReciboEntradas(pagoId)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'comprobante.pdf'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch {
+    toast('No se pudo descargar el recibo', 'error')
+  } finally {
+    setDescargando(false)
+  }
+}
+
+// `pago.fecha_pago` es un datetime completo en UTC (no una fecha suelta
+// como `cargo.fecha_vencimiento`) — fechaLocalDeDatetime() lo pasa a fecha
+// local antes de formatear, para no fechar al día siguiente un pago hecho
+// a la noche en Argentina.
+function FilaPago({ pago }) {
+  const toast = useToast()
+  const [descargando, setDescargando] = useState(false)
+
+  return (
+    <li className="py-2 text-sm space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 text-gray-700">
+          Cuota {pago.cargo_numero} · {formatMoneda(pago.monto)} · {formatFecha(fechaLocalDeDatetime(pago.fecha_pago))}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {pago.anulado && <Badge color="red">Anulado</Badge>}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={descargando}
+            onClick={() => descargarReciboPago(pago.id, toast, setDescargando)}
+          >
+            <Download size={14} />
+            {descargando ? 'Descargando...' : 'Descargar recibo'}
+          </Button>
+        </div>
+      </div>
+      {pago.anulado && (
+        <p className="text-xs text-gray-400">Este pago fue anulado. Si tenés dudas, consultá en la academia.</p>
+      )}
+    </li>
+  )
+}
+
 function TarjetaCompra({ compra, onAmpliar, pagoOnline }) {
   const { label: labelCompra, color: colorCompra } = infoEstadoCompra(compra.estado)
 
@@ -213,6 +272,17 @@ function TarjetaCompra({ compra, onAmpliar, pagoOnline }) {
         </div>
       )}
 
+      {compra.pagos?.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Pagos</h3>
+          <ul className="divide-y divide-gray-50">
+            {compra.pagos.map((pago) => (
+              <FilaPago key={pago.id} pago={pago} />
+            ))}
+          </ul>
+        </div>
+      )}
+
       {compra.entradas.length > 0 && (
         <div>
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Entradas</h3>
@@ -235,24 +305,35 @@ export default function MisEntradas() {
   const { recargar: recargarNotificaciones } = notificacionesApi
   const toast = useToast()
   const [ampliado, setAmpliado] = useState(null)
+  const [pagoComprobante, setPagoComprobante] = useState(null)
 
   // Pagado: recarga la lista y las notificaciones, y avisa según cómo haya
   // quedado la compra — si quedó PAGADA, el botón "Elegir butacas" ya
   // aparece solo en AccionButacas (puede_elegir_butacas pasa a true con la
   // recarga), así que el toast no necesita llevar una acción, solo avisar.
-  const onPagado = useCallback((cargoId) => {
+  // `ordenPagada.pago_id` abre de paso el comprobante — el concepto se
+  // arma acá porque la orden no lo trae (solo id/estado/montos), pero
+  // compra+cargo frescos ya tienen evento y número de cuota a mano.
+  const onPagado = useCallback((cargoId, ordenPagada) => {
     recargar().then(({ compras: comprasFrescas }) => {
       const compra = comprasFrescas.find((c) => c.cargos.some((cg) => cg.id === cargoId))
       if (!compra) return
+      const cargoPagado = compra.cargos.find((cg) => cg.id === cargoId)
       if (compra.estado === 'PAGADA') {
         toast('Tu compra está paga. Ya podés elegir tus butacas.', 'success')
       } else {
-        const cargoPagado = compra.cargos.find((cg) => cg.id === cargoId)
         const siguiente = compra.cargos.find((cg) => cg.estado !== 'PAGADO')
         const proxima = siguiente?.fecha_vencimiento
           ? ` La próxima vence el ${formatFecha(siguiente.fecha_vencimiento)}.`
           : ''
         toast(`Pagaste la cuota ${cargoPagado?.numero} de ${compra.cargos.length}.${proxima}`, 'success')
+      }
+      if (ordenPagada.pago_id) {
+        setPagoComprobante({
+          id: ordenPagada.pago_id,
+          monto: ordenPagada.monto,
+          concepto: `${compra.evento.nombre} - cuota ${cargoPagado?.numero}/${compra.cargos.length}`,
+        })
       }
     })
     recargarNotificaciones()
@@ -373,6 +454,13 @@ export default function MisEntradas() {
       {ampliado && (
         <QRAmpliado texto={ampliado.texto} etiqueta={ampliado.etiqueta} onClose={() => setAmpliado(null)} />
       )}
+
+      <ComprobanteModal
+        isOpen={pagoComprobante !== null}
+        onClose={() => setPagoComprobante(null)}
+        pago={pagoComprobante}
+        obtenerBlob={(p) => descargarReciboEntradas(p.id)}
+      />
 
       <PagoOnlineHoja
         abierta={hojaAbierta}

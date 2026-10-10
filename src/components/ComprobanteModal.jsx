@@ -4,7 +4,7 @@ import Modal from './ui/Modal'
 import Button from './ui/Button'
 import { useToast } from '../context/ToastContext'
 import { descargarRecibo } from '../api/client'
-import { formatMoneda, formatFecha, infoMetodoPago } from '../utils/format'
+import { formatMoneda, formatFecha, fechaLocalDeDatetime, infoMetodoPago } from '../utils/format'
 
 const ICONOS_METODO = { banknote: Banknote, landmark: Landmark, 'credit-card': CreditCard }
 
@@ -62,21 +62,27 @@ export default function ComprobanteModal({ isOpen, onClose, pago, alumno, obtene
             <dd className="font-medium text-gray-800 text-right">{alumno.nombre_completo ?? '—'}</dd>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3">
-          <dt className="text-gray-400">Concepto</dt>
-          <dd className="font-medium text-gray-800 text-right">{pago.concepto}</dd>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <dt className="text-gray-400">Método</dt>
-          <dd className="font-medium text-gray-800 flex items-center gap-1.5">
-            <IconoMetodoPago metodo={pago.medio_pago} className="text-gray-400" />
-            {metodoLabel}
-          </dd>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <dt className="text-gray-400">Fecha</dt>
-          <dd className="font-medium text-gray-800">{formatFecha(pago.fecha_pago.split('T')[0])}</dd>
-        </div>
+        {pago.concepto && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-400">Concepto</dt>
+            <dd className="font-medium text-gray-800 text-right">{pago.concepto}</dd>
+          </div>
+        )}
+        {pago.medio_pago && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-400">Método</dt>
+            <dd className="font-medium text-gray-800 flex items-center gap-1.5">
+              <IconoMetodoPago metodo={pago.medio_pago} className="text-gray-400" />
+              {metodoLabel}
+            </dd>
+          </div>
+        )}
+        {pago.fecha_pago && (
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-400">Fecha</dt>
+            <dd className="font-medium text-gray-800">{formatFecha(fechaLocalDeDatetime(pago.fecha_pago))}</dd>
+          </div>
+        )}
       </dl>
 
       <div className="border-t border-gray-100 mt-4 pt-4 flex items-center justify-between">
