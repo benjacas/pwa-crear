@@ -4082,6 +4082,67 @@ tenía que lidiar con eso.
 - `npm run lint` y `npm run build` limpios. Bundle: 300.16 kB → 304.44 kB
   (+4.28 kB sin comprimir, gzip 91.63 kB → 92.90 kB, +1.27 kB).
 
+## Tarea U — Limpieza del mock de compra de entradas, capítulo final
+
+**Spec**: la Tarea R (`2840c4e`) había borrado `EventoButacas`/
+`ResumenCompra`/`VestuarioEvento` (las pantallas del flujo mock viejo) pero
+dejó a propósito `useMisEntradas.js`, `useVestuarioEvento.js` y la
+instancia de `useMisEntradas()` en `Shell.jsx`, porque en ese momento un
+`git grep` literal todavía los encontraba "importados" (`misEntradasApi`
+viajando por el contexto del `Outlet`, aunque nadie lo leyera). Esta tarea
+confirma con `git grep` qué de eso sigue sin ningún uso real y lo saca.
+
+- **`Shell.jsx`**: se fueron el `import useMisEntradas` y la variable
+  `misEntradasApi`, junto con su clave en `<Outlet context={{...}}>`.
+  Confirmado antes de tocarlo que **nada la leía**: de los cuatro
+  componentes que llaman `useOutletContext()`
+  (`MisEntradas.jsx`/`Notificaciones.jsx`/`Pagos.jsx`/`Vestuario.jsx`),
+  los cuatro solo destructuran `notificacionesApi`. Esa instancia (y el
+  comentario que explica por qué vive acá arriba y no en cada página) no
+  se tocó.
+- **Borrados**: `hooks/useMisEntradas.js` (su único importador era
+  `Shell.jsx`, ya resuelto arriba) y `hooks/useVestuarioEvento.js` (**ya
+  estaba muerto antes de esta tarea**: `git grep` no encontró ni un solo
+  `import` suyo en ningún archivo — nunca llegó a engancharse a una ruta).
+- **`mock/fixtures.js`**: se fueron `evaluacionesDemo` (cero importadores
+  en todo el repo, ni siquiera antes de esta limpieza — mock huérfano de
+  una tarea más vieja que nunca se enganchó a nada real),
+  `eventosDemo`/`misEntradasDemo` (solo las usaba `useMisEntradas.js`) y
+  `vestuarioPorEventoDemo` (solo la usaba `useVestuarioEvento.js`).
+  `proximoEventoDemo` queda igual (la usa `Home.jsx` de verdad) — como el
+  archivo no quedó vacío, ni él ni la carpeta `mock/` se borraron; se
+  actualizó sí el comentario de la estructura en el README, que ya
+  describía un estado que dejó de ser cierto.
+- **`api/client.js`**: sin cambios. Ninguno de los dos hooks borrados
+  importaba nada de ahí (los dos solo leían fixtures; el
+  `// más adelante: const data = await api...` de cada uno era un
+  comentario, nunca un import real) — y de las 32 funciones que exporta el
+  archivo, las 32 tienen como mínimo un uso real fuera de él, confirmado
+  cruzando cada nombre contra todo `src/` antes de descartar tocar nada
+  acá.
+- **Nota aparte, no es de esta tarea**: entre la Tarea T y esta quedó un
+  commit local (`descargar recibo de entradas con el pago_id ahora
+  expuesto`) sin pushear — nunca llegó a `main` vía PR, así que
+  `MisEntradas.jsx`/`ComprobanteModal.jsx` en este branch no tienen
+  todavía esa parte. No se tocó nada al respecto acá (esta tarea arrancó
+  recién después de un `checkout main && pull`, y mezclar ese commit
+  suelto en un chore de limpieza no correspondía) — queda pendiente de
+  decidir si se vuelve a hacer o se rescata esa rama.
+- **Verificado contra el backend real** (familia Ortiz, con la contraseña
+  dada por el usuario): sesión completa recorriendo Home, Pagos, Eventos,
+  Mis entradas, Elegir butacas, Vestuario, Notificaciones y Perfil con la
+  pestaña Network abierta — no hay ningún pedido a un endpoint de
+  `useMisEntradas`/`useVestuarioEvento` (nunca lo hubo: son mocks que no
+  pegan a la red), y la lista de pedidos reales (hijas, cuenta-corriente,
+  cuotas pendientes... pagos, vestuario, entradas, notificaciones,
+  perfil) es idéntica a antes de la limpieza. Ninguna pantalla rompió,
+  ninguna consola con errores nuevos.
+- **Simulado**: nada — no había nada que mockear para esta verificación
+  (al revés que las tareas anteriores, acá la prueba es "lo que ya no
+  está" en vez de un flujo nuevo, así que alcanza con la sesión real).
+- `npm run lint` y `npm run build` limpios. Bundle: 304.44 kB → 302.20 kB
+  (−2.24 kB sin comprimir, gzip 92.90 kB → 92.11 kB, −0.79 kB) — bajó, tal
+  como pedía la verificación.
 ## Tarea U — Historial de pagos de la compra, con recibo (vigente o anulado)
 
 **Spec**: el backend sumó `compra.pagos[]` (todos los pagos de una compra
